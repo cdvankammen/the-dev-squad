@@ -7,9 +7,20 @@
   _Adapter prefers installed occ, falls back to npx; conforms to ModelAdapter.spawn ChildProcess contract._
 - [x] implement-openclaude-adapter: Add OpenClaudeAdapter at src/lib/modelAdapters/openClaudeAdapter.ts to spawn openclaude binary or fall back to npx @gitlawb/openclaude when not installed on PATH. 🔴
   _Adapter prefers installed openclaude, falls back to npx; conforms to ModelAdapter.spawn ChildProcess contract._
+- [x] propagate-modelprovider-to-api: Accept modelProvider in POST /api/chat and propagate it to RunnerOptions in streamClaude so UI/API callers can choose provider per-request. 🔴
+  _Adds modelProvider to handleManual/handlePipeline and passes through to streamClaude RunnerOptions._
+- [x] auto-detect-adapter: Auto-detect a preferred adapter when no modelProvider is provided, using env var PIPELINE_PREFERRED_PROVIDERS or default ['occ','openclaude','claude-cli']. 🔴
+  _HostRunner.spawn tries adapters in preferred order and falls back to legacy 'claude' CLI._
+- [ ] docker-runner-provider-support: Update DockerRunner to optionally run other CLIs inside container (build custom image or mount host binaries); allow Docker image to be chosen via env var or pipeline config. 🟡
+  _This requires building a custom agent image that includes occ/openclaude or changing runtime to mount host binary into container; consider security implications._
+- [ ] ui-model-selection: Add UI controls to let users pick model/provider in the web client; ensure requests include modelProvider and model when calling POST /api/chat. 🟡
+  _Frontend change: small dropdown or provider selector in chat UI; fallback to server-detected provider._
+- [ ] discover-models-and-routing: Implement model discovery per-adapter (optional discoverModels() in ModelAdapter) and support routing rules (agent/tool -> provider/model), reading `.claude/settings.json` or new `agentModels` config. 🔴
+  _Start with adapter heuristics, then add config-based mappings for deterministic routing._
 - [ ] tune-rag-params: Expose top-k and snippet length as env vars (RETRIEVER_TOP_K, RAG_SNIPPET_LEN) and make defaults configurable in src/lib/rag/localRetriever.ts and in src/app/api/chat/route.ts. 🟡
 - [ ] limit-rag-per-agent: Add per-agent and per-phase toggles so RAG runs only when enabled; update src/app/api/chat/route.ts to consult agent config before calling retriever. 🟡
-- [ ] test-and-validate: Add integration tests and manual test scripts for the retriever service; measure latency and memory; validate fallback path. 🔴
+- [ ] test-and-validate: Add integration tests and manual test scripts for the retriever service and adapter flows; measure latency and memory; validate fallback path. 🔴
+- [ ] docs-and-tests: Add README docs and test scripts describing how to use occ/openclaude, how to configure PIPELINE_PREFERRED_PROVIDERS, and how to run in Docker with custom images. 🟡
 </todos>
 
 <!-- Auto-generated todo section -->
