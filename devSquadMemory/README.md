@@ -19,6 +19,10 @@ Contents (files included in this folder)
 - `skills_index.md` — index of SKILL.md files copied into memory
 - `skills_install_suggestions.md` — suggested install workflow and candidate skills
 - `deep_dive_questions.md` & `deep_dive_questions_2.md` — guided questions for maintainers
+- `chat_audit.md` — verified audit of the prior Copilot chat claims vs the actual repo
+- `providers_and_terminals.md` — how Dev Squad uses Claude/other CLIs, Docker, terminals, Bedrock, and local-model routing
+- `verification_report.md` — commands run and the current verified status of builds/tests/providers
+- `runbook.md` — step-by-step commands for app startup, tests, vector memory, providers, and Docker
 - `scripts/` — helper scripts (moved here from workspace root)
 - `skills_local/` — local skill mirror README (moved here)
 
@@ -33,10 +37,15 @@ python3 devSquadMemory/rag_ingest_example.py --source devSquadMemory --out devsq
 
 3. Use a local embedding model (sentence-transformers) if you want to avoid cloud uploads.
 
+4. Read `chat_audit.md` before trusting earlier implementation claims. It records which claims were true, partially true, or false when verified against the repo.
+
+5. Read `providers_and_terminals.md` if you want to use Bedrock, OpenClaude, Open Claude Code (`occ`), LM Studio, Ollama, or OpenAI-compatible endpoints.
+
 Notes
 -----
 - I moved research .md and helper scripts from temporary memory into this folder so nothing important is left outside the workspace.
 - Sensitive data (e.g., `.claude/settings.json`, credential files) were not copied here and were explicitly excluded from ingestion.
+- Do **not** keep a live Python virtualenv under `devSquadMemory/.venv`; Next/Turbopack traverses the workspace and symlinks inside a venv can break `npm run build`. Use your user Python, an external venv, or recreate a temporary venv only when you need it and delete it afterward.
 
 Local embedding quickstart
 -------------------------
@@ -57,3 +66,9 @@ python3 devSquadMemory/build_local_embeddings.py
 ```bash
 python3 devSquadMemory/query_helper.py --query "how does the runner spawn claude" --topk 5
 ```
+
+Provider reality check
+----------------------
+- Working executable providers in this repo today: `claude-cli`, `occ`, `openclaude`
+- Discovery-only / not executable as direct runners: `openai-http`, `lm-studio`
+- For LM Studio, Ollama, OpenRouter, Groq, DeepSeek, or other OpenAI-compatible backends, use the `openclaude` provider and point OpenClaude at that backend.

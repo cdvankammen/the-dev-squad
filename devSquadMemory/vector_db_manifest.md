@@ -17,12 +17,10 @@ Details
 
 How to reproduce
 -----------------
-1. Create and activate the virtualenv (created here as `.venv`):
+1. Install the Python dependencies using either your user environment or an external virtualenv. Avoid keeping a live venv under `devSquadMemory/.venv` because it breaks `npm run build` in this Next.js workspace.
 
 ```bash
-python3 -m venv devSquadMemory/.venv
-source devSquadMemory/.venv/bin/activate
-pip install -r devSquadMemory/requirements.txt
+python3 -m pip install --user -r devSquadMemory/requirements.txt
 ```
 
 2. Run the build script (will download model weights on first run):

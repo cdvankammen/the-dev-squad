@@ -4,6 +4,7 @@ import { homedir } from 'os';
 import { createInterface } from 'readline';
 import { NextRequest, NextResponse } from 'next/server';
 import { appendServerLog } from '@/lib/server-logging';
+import getModelAdapter from '@/lib/modelAdapters';
 import {
   createRunner,
   isRecoverableDockerAuthFailure,
@@ -172,6 +173,19 @@ function appendSupervisorFailureAndGuidance(
   writeState(file, state);
 }
 
+function validateExecutableProvider(modelProvider?: string): string | null {
+  if (!modelProvider) return null;
+  const adapter = getModelAdapter(modelProvider);
+  if (!adapter) return `Unknown model provider: ${modelProvider}`;
+  if (typeof adapter.supportsExecution === 'function' && adapter.supportsExecution() === false) {
+    return `Provider '${modelProvider}' is discovery-only in this repo right now. Use 'openclaude' to reach LM Studio/Ollama/OpenAI-compatible backends, or use 'claude-cli' / 'occ'.`;
+  }
+  if (!adapter.isAvailable()) {
+    return `Provider '${modelProvider}' is not available in this environment.`;
+  }
+  return null;
+}
+
 // ── Shared: stream claude output into a state file ──────────────────
 
 function streamClaude(
@@ -328,8 +342,8 @@ function streamClaude(
       } catch {}
       resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
     });
-    child.on('error', () => {
-      resolveResponse(NextResponse.json({ success: false }, { status: 500 }));
+    child.on('error', (err) => {
+      resolveResponse(NextResponse.json({ success: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 }));
     });
   });
 }
@@ -398,6 +412,7 @@ async function handleManual(agent: string, message: string, model: string, model
 async function handlePipeline(
   agent: string,
   message: string,
+  model?: string,
   modelProvider?: string,
   defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean }
 ) {
@@ -434,6 +449,7 @@ async function handlePipeline(
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
+  const effectiveModel = model || String(state.selectedModel || 'claude-opus-4-6');
 
   if (agent === 'S') {
     const intent = parseSupervisorIntent(message);
@@ -594,7 +610,7 @@ async function handlePipeline(
           prompt: conceptContext,
           projectDir,
           pipelineDir: BUILDUI_DIR,
-          model: 'claude-opus-4-6',
+          model: effectiveModel,
           roleFile: ROLE_FILES.S,
           resume: sessionId || undefined,
           pipelineAgent: 'S',
@@ -659,7 +675,7 @@ async function handlePipeline(
       prompt: finalMessage,
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: 'claude-opus-4-6',
+      model: effectiveModel,
       roleFile,
       resume: sessionId || undefined,
       pipelineAgent: agent as PipelineAgentId,
@@ -679,11 +695,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { agent, message, mode, model, modelProvider, securityMode, permissionMode, runGoal, runFinalAudit } = body || {};
 
-    if (mode === 'manual') {
-      return handleManual(agent, message, model || 'claude-sonnet-4-6', modelProvider);
+    const providerError = validateExecutableProvider(modelProvider);
+    if (providerError) {
+      return NextResponse.json({ success: false, error: providerError }, { status: 400 });
     }
 
-    return handlePipeline(agent, message, modelProvider, {
+    if (mode === 'manual') {
+      return await handleManual(agent, message, model || 'claude-sonnet-4-6', modelProvider);
+    }
+
+    return await handlePipeline(agent, message, model, modelProvider, {
       securityMode: securityMode === 'strict' ? 'strict' : 'fast',
       permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
       runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',

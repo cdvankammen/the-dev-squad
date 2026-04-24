@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startPipelineRun } from '@/lib/pipeline-control';
+import getModelAdapter from '@/lib/modelAdapters';
 
 export async function POST(req: NextRequest) {
   let securityMode = 'fast';
@@ -20,6 +21,19 @@ export async function POST(req: NextRequest) {
     var model = typeof body?.model === 'string' ? body.model : undefined;
     var modelProvider = typeof body?.modelProvider === 'string' ? body.modelProvider : undefined;
   } catch {}
+
+  if (modelProvider) {
+    const adapter = getModelAdapter(modelProvider);
+    if (!adapter) {
+      return NextResponse.json({ success: false, error: `Unknown model provider: ${modelProvider}` }, { status: 400 });
+    }
+    if (typeof adapter.supportsExecution === 'function' && adapter.supportsExecution() === false) {
+      return NextResponse.json({ success: false, error: `Provider '${modelProvider}' is discovery-only in this repo right now. Use openclaude/occ/claude-cli for executable pipeline runs.` }, { status: 400 });
+    }
+    if (!adapter.isAvailable()) {
+      return NextResponse.json({ success: false, error: `Provider '${modelProvider}' is not available in this environment.` }, { status: 400 });
+    }
+  }
 
   const result = startPipelineRun({
     securityMode: securityMode === 'strict' ? 'strict' : 'fast',

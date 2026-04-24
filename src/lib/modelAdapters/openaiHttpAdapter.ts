@@ -1,33 +1,61 @@
-import { ModelAdapter, AdapterSpawnOptions } from './ModelAdapter';
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import path from 'path';
+import { ChildProcessWithoutNullStreams } from 'child_process';
+import {
+  AdapterSpawnOptions,
+  captureCommandOutput,
+  collectConfiguredModelIds,
+  ModelAdapter,
+  parseLikelyModelIds,
+  spawnLocal,
+} from './ModelAdapter';
 
-/**
- * OpenAI HTTP adapter (stub)
- *
- * This file contains a minimal stub demonstrating how an HTTP-backed adapter
- * could be implemented. It intentionally does not include a full HTTP client
- * implementation or direct network calls. Replace the spawn() implementation
- * with a process that streams responses from your chosen HTTP client or local
- * model server.
- */
-export class OpenAIHttpAdapter implements ModelAdapter {
-  isAvailable(): boolean {
-    // Only available when OPENAI_API_KEY is present in the environment.
-    return Boolean(process.env.OPENAI_API_KEY);
-  }
-
-  spawn(_opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
-    // This is intentionally a stub. Implementations should stream a
-    // ChildProcessCompatible interface that exposes stdout/stderr and
-    // supports on('close', ...).
-    throw new Error('OpenAIHttpAdapter.spawn is a stub — implement network streaming or a local shim.');
-  }
-
-  async discoverModels(): Promise<string[]> {
-    const m = process.env.OPENAI_MODEL;
-    if (m) return [m];
-    return [];
-  }
+function normalizeBaseUrl(base?: string): string {
+  const normalized = (base || 'https://api.openai.com/v1').trim();
+  return normalized.endsWith('/v1') ? normalized : `${normalized.replace(/\/$/, '')}/v1`;
 }
 
-export default OpenAIHttpAdapter;
+export default class OpenAIHttpAdapter implements ModelAdapter {
+  readonly id = 'openai-http';
+  readonly displayName = 'OpenAI-Compatible HTTP';
+  readonly supportsExecution = true;
+
+  isAvailable(): boolean {
+    return Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL);
+  }
+
+  spawn(opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
+    const shimPath = path.join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const env = {
+      ...opts.env,
+      MODEL_PROVIDER: this.id,
+      OPENAI_BASE_URL: normalizeBaseUrl(process.env.OPENAI_BASE_URL),
+    };
+    return spawnLocal(process.execPath, [shimPath, '--provider', this.id, ...opts.args], {
+      cwd: opts.cwd,
+      env,
+    });
+  }
+
+  async discoverModels(): Promise<string[] | null> {
+    const baseUrl = normalizeBaseUrl(process.env.OPENAI_BASE_URL);
+    const args = [
+      '-sS',
+      '-H',
+      'Content-Type: application/json',
+      ...(process.env.OPENAI_API_KEY
+        ? ['-H', `Authorization: Bearer ${process.env.OPENAI_API_KEY}`]
+        : []),
+      `${baseUrl}/models`,
+    ];
+
+    const output = await captureCommandOutput('curl', args);
+    const configured = collectConfiguredModelIds(process.env.OPENAI_MODEL);
+
+    if (!output.ok || !output.stdout.trim()) {
+      return configured;
+    }
+
+    const parsed = parseLikelyModelIds(output.stdout);
+    return Array.from(new Set([...parsed, ...configured]));
+  }
+}

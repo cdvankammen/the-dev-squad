@@ -7,14 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:runner": "node --experimental-strip-types scripts/test-runner.mjs",
+    "test:runner": "npx tsx scripts/test-runner.mjs",
     "test:hook": "node scripts/test-hook-contract.mjs",
-    "test:signals": "node --experimental-strip-types scripts/test-structured-output-parser.mjs",
-    "test:runtime": "node --experimental-strip-types scripts/test-pipeline-runtime.mjs",
-    "test:planning": "node --experimental-strip-types scripts/test-pipeline-planning.mjs",
-    "test:supervisor": "node --experimental-strip-types scripts/test-supervisor-snapshot.mjs",
-    "test:supervisor-concept": "node --experimental-strip-types scripts/test-supervisor-concept.mjs",
-    "test:supervisor-intents": "node --experimental-strip-types scripts/test-supervisor-intents.mjs"
+    "test:signals": "npx tsx scripts/test-structured-output-parser.mjs",
+    "test:runtime": "npx tsx scripts/test-pipeline-runtime.mjs",
+    "test:planning": "npx tsx scripts/test-pipeline-planning.mjs",
+    "test:supervisor": "npx tsx scripts/test-supervisor-snapshot.mjs",
+    "test:supervisor-concept": "npx tsx scripts/test-supervisor-concept.mjs",
+    "test:supervisor-intents": "npx tsx scripts/test-supervisor-intents.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

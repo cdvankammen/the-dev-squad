@@ -1,29 +1,23 @@
-import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput } from './ModelAdapter';
+import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput, collectConfiguredModelIds, commandExists, extractLikelyModelIds } from './ModelAdapter';
 
 /** Adapter for Gitlawb/openclaude (openclaude) */
 export class OpenClaudeAdapter implements ModelAdapter {
   isAvailable(): boolean {
-    try {
-      const child = spawnLocal('which', ['openclaude'], { args: [] });
-      child.kill();
-      return true;
-    } catch {
-      try {
-        const child = spawnLocal('which', ['npx'], { args: [] });
-        child.kill();
-        return true;
-      } catch {
-        return false;
-      }
-    }
+    return commandExists('openclaude') || commandExists('npx');
+  }
+
+  supportsExecution(): boolean {
+    return true;
   }
 
   spawn(opts: AdapterSpawnOptions) {
-    try {
+    if (commandExists('openclaude')) {
       return spawnLocal('openclaude', opts.args || [], opts);
-    } catch {
+    }
+    if (commandExists('npx')) {
       return spawnLocal('npx', ['@gitlawb/openclaude', ...(opts.args || [])], opts);
     }
+    throw new Error('Neither `openclaude` nor `npx` is available.');
   }
 
   async discoverModels(): Promise<string[]> {
@@ -34,7 +28,7 @@ export class OpenClaudeAdapter implements ModelAdapter {
       ['npx', '@gitlawb/openclaude', 'list-models'],
     ];
 
-    const found = new Set<string>();
+    const found = new Set<string>(collectConfiguredModelIds());
     for (const t of tries) {
       try {
         const out = await captureCommandOutput(t[0], t.slice(1), { timeoutMs: 2500 });
@@ -48,12 +42,7 @@ export class OpenClaudeAdapter implements ModelAdapter {
           }
         } catch {}
 
-        const tokens = out.match(/[A-Za-z0-9\-\._]{3,}/g) || [];
-        for (const token of tokens) {
-          const tkn = token.trim();
-          const isLikelyModel = /claude|opus|sonnet|gpt|llama|mistral/i.test(tkn) || (tkn.includes('-') && /\d/.test(tkn));
-          if (isLikelyModel) found.add(tkn);
-        }
+        for (const token of extractLikelyModelIds(out)) found.add(token);
       } catch {
         /* ignore */
       }

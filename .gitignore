@@ -50,3 +50,8 @@ next-env.d.ts
 CLAUDE.md
 .vscode/agent-notes.json
 .dev-memory/
+
+# generated Dev Squad memory runtime artifacts
+devSquadMemory/.venv/
+devSquadMemory/workspace_docs.jsonl
+devSquadMemory/workspace_vectors.jsonl

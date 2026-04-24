@@ -1,32 +1,23 @@
-import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput } from './ModelAdapter';
+import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput, collectConfiguredModelIds, commandExists, extractLikelyModelIds } from './ModelAdapter';
 
 /** Adapter for ruvnet/open-claude-code (occ) */
 export class OpenClaudeCodeAdapter implements ModelAdapter {
   isAvailable(): boolean {
-    // Available if `occ` is on PATH or `npx` is available to run the package.
-    try {
-      const child = spawnLocal('which', ['occ'], { args: [] });
-      child.kill();
-      return true;
-    } catch {
-      try {
-        const child = spawnLocal('which', ['npx'], { args: [] });
-        child.kill();
-        return true;
-      } catch {
-        return false;
-      }
-    }
+    return commandExists('occ') || commandExists('npx');
+  }
+
+  supportsExecution(): boolean {
+    return true;
   }
 
   spawn(opts: AdapterSpawnOptions) {
-    // Prefer the installed `occ` binary. If not present, fall back to
-    // `npx @ruvnet/open-claude-code ...` so users can run without global install.
-    try {
+    if (commandExists('occ')) {
       return spawnLocal('occ', opts.args || [], opts);
-    } catch {
+    }
+    if (commandExists('npx')) {
       return spawnLocal('npx', ['@ruvnet/open-claude-code', ...(opts.args || [])], opts);
     }
+    throw new Error('Neither `occ` nor `npx` is available for open-claude-code.');
   }
 
   async discoverModels(): Promise<string[]> {
@@ -37,7 +28,7 @@ export class OpenClaudeCodeAdapter implements ModelAdapter {
       ['npx', '@ruvnet/open-claude-code', '--list-models'],
       ['npx', '@ruvnet/open-claude-code', 'list-models'],
     ];
-    const found = new Set<string>();
+    const found = new Set<string>(collectConfiguredModelIds());
     for (const t of tries) {
       try {
         const out = await captureCommandOutput(t[0], t.slice(1), { timeoutMs: 2500 });
@@ -51,12 +42,7 @@ export class OpenClaudeCodeAdapter implements ModelAdapter {
           }
         } catch {}
 
-        const tokens = out.match(/[A-Za-z0-9\-\._]{3,}/g) || [];
-        for (const token of tokens) {
-          const tkn = token.trim();
-          const isLikelyModel = /claude|opus|sonnet|gpt|llama|mistral/i.test(tkn) || (tkn.includes('-') && /\d/.test(tkn));
-          if (isLikelyModel) found.add(tkn);
-        }
+        for (const token of extractLikelyModelIds(out)) found.add(token);
       } catch {
         /* ignore */
       }
