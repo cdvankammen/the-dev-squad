@@ -6,6 +6,7 @@ export async function POST(req: NextRequest) {
   let permissionMode = 'auto';
   let runGoal = 'full-build';
   let runFinalAudit = false;
+  let discoveredOnly = false;
   try {
     const body = await req.json();
     if (body?.securityMode === 'strict') securityMode = 'strict';
@@ -13,6 +14,11 @@ export async function POST(req: NextRequest) {
     else if (body?.permissionMode === 'dangerously-skip-permissions') permissionMode = 'dangerously-skip-permissions';
     if (body?.runGoal === 'plan-only') runGoal = 'plan-only';
     if (body?.runFinalAudit === true) runFinalAudit = true;
+    // Optional discovered-only preference
+    discoveredOnly = Boolean(body?.discoveredOnly);
+    // Optional model/provider coming from UI
+    var model = typeof body?.model === 'string' ? body.model : undefined;
+    var modelProvider = typeof body?.modelProvider === 'string' ? body.modelProvider : undefined;
   } catch {}
 
   const result = startPipelineRun({
@@ -20,6 +26,9 @@ export async function POST(req: NextRequest) {
     permissionMode: permissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
     runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',
     runFinalAudit,
+    model,
+    modelProvider,
+    discoveredOnly,
   });
 
   if (!result.success) {

@@ -181,14 +181,28 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider }: 
     return res.json();
   }, [mode, model, provider]);
 
-  const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
+  const startPipeline = useCallback(async (
+    securityMode: SecurityMode,
+    runGoal: RunGoal,
+    permissionMode?: PermissionMode,
+    runFinalAudit?: boolean,
+    discoveredOnly?: boolean
+  ) => {
     const res = await fetch('/api/start-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ securityMode, permissionMode, runGoal, runFinalAudit: runFinalAudit === true }),
+      body: JSON.stringify({
+        securityMode,
+        permissionMode,
+        runGoal,
+        runFinalAudit: runFinalAudit === true,
+        model,
+        modelProvider: provider,
+        discoveredOnly: discoveredOnly === true,
+      }),
     });
     return res.json();
-  }, []);
+  }, [model, provider]);
 
   const resumePipeline = useCallback(async () => {
     const res = await fetch('/api/resume-pipeline', {

@@ -57,6 +57,8 @@ export default function PipelinePage() {
   const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
   const availableModelCount = modelOptions.filter((o) => !!o.value).length;
   const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
+  const [discoveryInfo, setDiscoveryInfo] = useState<Record<string, { usedDiscovery: boolean; modelCount: number; fallbackUsed: boolean }>>({});
+  const [discoveredOnly, setDiscoveredOnly] = useState(false);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
@@ -81,6 +83,13 @@ export default function PipelinePage() {
   }, []);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem('discoveredOnly');
+      if (stored !== null) setDiscoveredOnly(stored === 'true');
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (!selectedProvider) return;
     (async () => {
       try {
@@ -88,22 +97,115 @@ export default function PipelinePage() {
         if (!res.ok) return;
         const data = await res.json();
         const list = Array.isArray(data?.models) ? data.models : [];
+        const usedDiscovery = Boolean(data?.usedDiscovery);
+        const fallbackUsed = Boolean(data?.fallbackUsed);
 
-        if (list.length > 0) {
-          const opts = list.map((m: string) => ({ value: m, label: m }));
-          setModelOptions(opts);
-          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
-        } else {
-          // No models discovered — present a single placeholder so the UI
-          // can indicate there are no choices available.
-          setModelOptions([{ value: '', label: 'No models available' }]);
-          setSelectedModel('');
-        }
+        setDiscoveryInfo((prev) => ({ ...prev, [selectedProvider]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+
+        setModelOptions((prevOptions) => {
+          // If discovery returned models, prefer them.
+          if (list.length > 0) {
+            const opts = list.map((m: string) => ({ value: m, label: m }));
+            if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+            return opts;
+          }
+
+          // Discovery ran but found nothing: behavior depends on the
+          // `discoveredOnly` preference. If strict, show an explicit "no
+          // models discovered" state. Otherwise fall back to preserving
+          // existing options or showing a placeholder when none exist.
+          if (usedDiscovery && list.length === 0) {
+            if (discoveredOnly) {
+              setSelectedModel('');
+              return [{ value: '', label: 'No models discovered' }];
+            }
+            const hasExisting = Array.isArray(prevOptions) && prevOptions.some((o) => !!o.value);
+            if (hasExisting) {
+              // Ensure selectedModel remains valid; otherwise pick first available.
+              if (!prevOptions.some((o) => o.value === selectedModel)) {
+                const first = prevOptions.find((o) => !!o.value);
+                if (first) setSelectedModel(first.value);
+                else setSelectedModel('');
+              }
+              return prevOptions;
+            }
+
+            setSelectedModel('');
+            return [{ value: '', label: 'No models available' }];
+          }
+
+          // If discovery didn't run and fallback was used, populate with
+          // the fallback models the API returned (if any).
+          if (fallbackUsed && list.length === 0) {
+            const fallback = Array.isArray(data?.models) ? data.models : [];
+            if (fallback.length > 0) {
+              const opts: Array<{ value: string; label: string }> = fallback.map((m: string) => ({ value: m, label: m }));
+              if (!opts.some((o) => o.value === selectedModel)) setSelectedModel(opts[0].value);
+              return opts;
+            }
+          }
+
+          // Otherwise leave existing options in place.
+          return prevOptions;
+        });
       } catch {
-        // On network/parse errors, leave existing options in place.
+        // On error, keep existing options.
       }
     })();
   }, [selectedProvider]);
+
+  async function fetchModelsForProvider(p: string) {
+    try {
+      const res = await fetch(`/api/models?provider=${encodeURIComponent(p)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data?.models) ? data.models : [];
+      const usedDiscovery = Boolean(data?.usedDiscovery);
+      const fallbackUsed = Boolean(data?.fallbackUsed);
+
+      setDiscoveryInfo((prev) => ({ ...prev, [p]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+
+      setModelOptions((prevOptions) => {
+        if (list.length > 0) {
+          const opts = list.map((m: string) => ({ value: m, label: m }));
+          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+          return opts;
+        }
+
+        if (usedDiscovery && list.length === 0) {
+          if (discoveredOnly) {
+            setSelectedModel('');
+            return [{ value: '', label: 'No models discovered' }];
+          }
+          const hasExisting = Array.isArray(prevOptions) && prevOptions.some((o) => !!o.value);
+          if (hasExisting) {
+            if (!prevOptions.some((o) => o.value === selectedModel)) {
+              const first = prevOptions.find((o) => !!o.value);
+              if (first) setSelectedModel(first.value);
+              else setSelectedModel('');
+            }
+            return prevOptions;
+          }
+
+          setSelectedModel('');
+          return [{ value: '', label: 'No models available' }];
+        }
+
+        if (fallbackUsed && list.length === 0) {
+          const fallback = Array.isArray(data?.models) ? data.models : [];
+          if (fallback.length > 0) {
+            const opts: Array<{ value: string; label: string }> = fallback.map((m: string) => ({ value: m, label: m }));
+            if (!opts.some((o) => o.value === selectedModel)) setSelectedModel(opts[0].value);
+            return opts;
+          }
+        }
+
+        return prevOptions;
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -214,7 +316,7 @@ export default function PipelinePage() {
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
-    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode, selectedRunFinalAudit);
+    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode, selectedRunFinalAudit, discoveredOnly);
     if (!res?.success) {
       setPipelineStarted(false);
       console.error('Pipeline failed to start:', res?.error || 'Unknown error');
@@ -469,16 +571,45 @@ export default function PipelinePage() {
                       onChange={(e) => setSelectedProvider(e.target.value)}
                       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
                     >
-                    {availableProviders.length === 0 ? (
-                      <option value="claude-cli">Claude</option>
-                    ) : (
-                      availableProviders.map((p) => (
-                        <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
-                      ))
-                    )}
+                      {availableProviders.length === 0 ? (
+                        <option value="claude-cli">Claude</option>
+                      ) : (
+                        availableProviders.map((p) => (
+                          <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                        ))
+                      )}
                     </select>
 
-                    <div className="text-[11px] text-slate-400">Models: <span className="font-mono">{availableModelCount}</span></div>
+                    <div className="text-[11px] text-slate-400">Models: <span className="font-mono">{availableModelCount}</span>
+                      {selectedProvider && discoveryInfo[selectedProvider] && (
+                        discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                        ? <span className="ml-2 text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — using fallback)'}</span>
+                        : discoveryInfo[selectedProvider].usedDiscovery
+                          ? <span className="ml-2 text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                          : discoveryInfo[selectedProvider].fallbackUsed
+                            ? <span className="ml-2 text-xs text-slate-400">(fallback)</span>
+                            : null
+                      )}
+                      <button
+                        onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+                        className="ml-2 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10"
+                      >
+                        Refresh
+                      </button>
+                      <label className="ml-3 inline-flex items-center gap-2 text-[11px] text-slate-400">
+                        <input
+                          type="checkbox"
+                          checked={discoveredOnly}
+                          onChange={(e) => {
+                            const v = e.target.checked;
+                            setDiscoveredOnly(v);
+                            try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-xs">Discovered-only</span>
+                      </label>
+                    </div>
                   </div>
 
                   <select
@@ -492,18 +623,7 @@ export default function PipelinePage() {
                   </select>
                 </div>
               )}
-            </div>
-            <div className={`mt-3 rounded-xl border px-3 py-3 ${
-              modePosture.tone === 'warning'
-                ? 'border-amber-500/30 bg-amber-500/10'
-                : 'border-white/10 bg-white/5'
-            }`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{modePosture.title}</div>
-                <Badge variant={isPipeline ? (activeSecurityMode === 'strict' ? 'warning' : 'success') : 'neutral'}>
-                  {isPipeline ? 'SUPERVISOR-RUN' : 'YOU-RUN'}
-                </Badge>
-              </div>
+
               <p className="mt-2 text-[12px] leading-relaxed text-slate-200">{modePosture.summary}</p>
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{modePosture.detail}</p>
             </div>

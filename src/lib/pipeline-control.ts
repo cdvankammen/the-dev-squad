@@ -96,6 +96,9 @@ export function startPipelineRun(options: {
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
   runFinalAudit?: boolean;
+  model?: string;
+  modelProvider?: string;
+  discoveredOnly?: boolean;
 }): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean } {
   const securityMode = options.securityMode === 'strict' ? 'strict' : 'fast';
   const permissionMode: PermissionMode = options.permissionMode === 'plan' ? 'plan'
@@ -158,6 +161,9 @@ export function startPipelineRun(options: {
   stagingState.securityMode = securityMode;
   stagingState.permissionMode = permissionMode;
   stagingState.runGoal = runGoal;
+  if (typeof options.model === 'string') stagingState.selectedModel = options.model;
+  if (typeof options.modelProvider === 'string') stagingState.selectedProvider = options.modelProvider;
+  stagingState.discoveredOnly = options.discoveredOnly === true;
   stagingState.runFinalAudit = runFinalAudit;
   stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';
   stagingState.pipelineStatus = 'running';

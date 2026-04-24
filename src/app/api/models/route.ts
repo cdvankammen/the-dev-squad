@@ -6,6 +6,7 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   'occ': ['claude-opus-4-6', 'claude-sonnet-4-6'],
   'openclaude': [process.env.OPENAI_MODEL || 'gpt-4o', 'gpt-4o-mini-1'],
   'openai-http': [process.env.OPENAI_MODEL || 'gpt-4o'],
+  'lm-studio': [process.env.OPENAI_MODEL || 'gpt-4o'],
 };
 
 export async function GET(req: Request) {

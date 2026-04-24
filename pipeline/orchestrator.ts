@@ -65,7 +65,7 @@ const ROLE_C = join(BUILDUI_DIR, 'role-c.md');
 const ROLE_D = join(BUILDUI_DIR, 'role-d.md');
 const ROLE_E = join(BUILDUI_DIR, 'role-e.md');
 
-const MODEL = 'claude-opus-4-6';
+const DEFAULT_MODEL = 'claude-opus-4-6';
 
 // Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
@@ -463,12 +463,15 @@ async function runClaudeTurn(
       prompt: safePrompt,
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: MODEL,
+      // Prefer an explicit selection saved in the pipeline state (selectedModel),
+      // otherwise fall back to DEFAULT_MODEL.
+      model: (state as any).selectedModel || DEFAULT_MODEL,
       roleFile: opts.role,
       resume: opts.resume,
       jsonSchema: opts.jsonSchema,
       effort,
       pipelineAgent: agent,
+      modelProvider: (state as any).selectedProvider || undefined,
       securityMode: state.securityMode,
       templateFiles: agent === 'A'
         ? [
