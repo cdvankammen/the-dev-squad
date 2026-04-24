@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { getModelAdapter } from '../src/lib/modelAdapters';
 
 export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
@@ -19,6 +20,8 @@ export interface RunnerOptions {
   jsonSchema?: Record<string, unknown>;
   effort?: string;
   pipelineAgent?: PipelineAgentId;
+  // Optional explicit model provider identifier (e.g. 'claude-cli', 'openai-http', 'ollama')
+  modelProvider?: string;
   securityMode?: 'fast' | 'strict';
   extraEnv?: NodeJS.ProcessEnv;
   templateFiles?: string[];
@@ -390,6 +393,24 @@ export function buildDockerArgs(
 
 export class HostRunner implements Runner {
   spawn(opts: RunnerOptions): SpawnedRunnerChild {
+    const provider = opts.modelProvider ?? 'claude-cli';
+    const adapter = getModelAdapter(provider);
+
+    if (adapter && adapter.isAvailable()) {
+      try {
+        const child = adapter.spawn({
+          args: buildClaudeArgs(opts),
+          cwd: opts.projectDir,
+          env: buildRunnerEnv(opts),
+        });
+        return withBackend(child, 'host');
+      } catch (err) {
+        console.warn(`[ModelAdapter] adapter for '${provider}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; falling back to claude-cli`);
+      }
+    } else if (opts.modelProvider) {
+      console.warn(`[ModelAdapter] requested provider '${opts.modelProvider}' not available; falling back to claude-cli`);
+    }
+
     return withBackend(nodeSpawn('claude', buildClaudeArgs(opts), {
       cwd: opts.projectDir,
       stdio: ['pipe', 'pipe', 'pipe'],

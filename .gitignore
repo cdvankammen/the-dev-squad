@@ -48,3 +48,5 @@ next-env.d.ts
 
 .vercel
 CLAUDE.md
+.vscode/agent-notes.json
+.dev-memory/
