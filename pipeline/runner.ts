@@ -44,7 +44,12 @@ export interface Runner {
   supportsHostFallback(opts: RunnerOptions): boolean;
 }
 
-const DOCKER_IMAGE = 'dev-squad-agent:latest';
+const DOCKER_IMAGE = process.env.PIPELINE_DOCKER_AGENT_IMAGE || 'dev-squad-agent:latest';
+// Command to run inside the container for agent invocation. This can be used
+// to point to an image that exposes `occ` or `openclaude` instead of the
+// default claude CLI path. Example: 
+//   PIPELINE_DOCKER_AGENT_CMD="/usr/bin/occ"
+const DOCKER_AGENT_CMD = process.env.PIPELINE_DOCKER_AGENT_CMD || '/usr/local/share/npm-global/bin/claude';
 const KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
 const DOCKER_WORKSPACE_ROOT = join(tmpdir(), 'devsquad-docker-workspaces');
 const DOCKER_SYNC_BACK_EXCLUDES = new Set([
@@ -382,9 +387,10 @@ export function buildDockerArgs(
   dockerArgs.push('-e', 'CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1');
   dockerArgs.push('-e', `AGENT_NETWORK_PROFILE=${getNetworkProfile(opts.pipelineAgent)}`);
 
+  const containerCmd = (process.env.PIPELINE_DOCKER_AGENT_CMD || DOCKER_AGENT_CMD).split(' ').filter(Boolean);
   dockerArgs.push(
     DOCKER_IMAGE,
-    '/usr/local/share/npm-global/bin/claude',
+    ...containerCmd,
     ...buildContainerClaudeArgs(opts),
   );
 

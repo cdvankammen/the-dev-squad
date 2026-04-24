@@ -1,10 +1,11 @@
-<todos title="Add model discovery, UI model fetch, and Docker agent support" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
-- [-] implement-adapter-model-discovery: Implement adapter-level model discovery and wire /api/models to use it 🔴
-  _Add discoverModels() optional method to ModelAdapter interface; implement in occ/openclaude/claude adapters by invoking CLI flags or reading env/config; update /api/models to prefer adapter discovery._
-- [ ] ui-model-dropdown-fetch: Fetch /api/models in the UI when provider changes and populate model dropdown dynamically 🟡
-  _Add effect in src/app/page.tsx and src/app/squad/page.tsx to call GET /api/models?provider= and update the model select options; persist selection in localStorage._
-- [ ] docker-agent-image-with-occ-openclaude: Create Docker agent image variant with occ/openclaude and wire DockerRunner option to use it 🟡
-  _Add ARG in pipeline/Dockerfile.agent to optionally install occ/openclaude or provide a separate Dockerfile.agent.occ; update pipeline/runner.ts to accept DOCKER_AGENT_IMAGE env override._
+<todos title="Verify model providers, discovery, logging, and LM Studio/OpenAI integration" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
+- [-] verify-typescript-compile: Run TypeScript type-check (npx tsc --noEmit -p tsconfig.json) 🔴
+- [ ] run-model-discovery-tests: Run scripts/test-models.mjs for providers: occ, openclaude, openai-http 🔴
+- [ ] run-chat-logging-test: Run scripts/test-chat-logging.mjs to validate error logging and defensive responses 🔴
+- [ ] inspect-server-logs: Inspect logs/server-errors.log for recent errors 🟡
+- [ ] verify-api-endpoints: Verify /api/providers and /api/models endpoints (use scripts/test-models or curl) 🔴
+- [ ] document-lm-studio-openai-setup: Document how to configure LM Studio or any OpenAI-compatible endpoint and troubleshooting/repair steps 🟡
+- [ ] implement-lm-studio-adapter: (Future) Implement a dedicated LM Studio adapter if needed (copy openaiHttpAdapter and adapt) 🟢
 </todos>
 
 <!-- Auto-generated todo section -->

@@ -38,7 +38,7 @@ const PHASE_LABELS: Record<string, string> = {
   complete: 'Complete',
 };
 
-const MODEL_OPTIONS = [
+const INITIAL_MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Opus 4.6' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
 ];
@@ -66,6 +66,8 @@ export default function SquadPage() {
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
   const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
+  const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
+  const availableModelCount = modelOptions.filter((o) => !!o.value).length;
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
@@ -97,6 +99,44 @@ export default function SquadPage() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data?.models) ? data.models : [];
+
+        if (list.length > 0) {
+          const opts = list.map((m: string) => ({ value: m, label: m }));
+          setModelOptions(opts);
+          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+        } else {
+          setModelOptions([{ value: '', label: 'No models available' }]);
+          setSelectedModel('');
+        }
+      } catch {}
+    })();
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data?.models) ? data.models : [];
+        if (list.length > 0) {
+          const opts = list.map((m: string) => ({ value: m, label: m }));
+          setModelOptions(opts);
+          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+        }
+      } catch {}
+    })();
+  }, [selectedProvider]);
 
   useEffect(() => {
     if (mode !== 'pipeline') return;
@@ -244,11 +284,11 @@ export default function SquadPage() {
                       onChange={(e) => setSelectedModel(e.target.value)}
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
                     >
-                      {MODEL_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value} className="bg-[#121522]">
-                          {opt.label}
-                        </option>
-                      ))}
+                      {modelOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value} className="bg-[#121522]" disabled={opt.value === ''}>
+                            {opt.label}
+                          </option>
+                        ))}
                     </select>
                   </div>
                 </div>

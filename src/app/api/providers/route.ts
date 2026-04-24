@@ -5,6 +5,7 @@ const KNOWN_PROVIDERS = [
   { id: 'occ', label: 'Open Claude Code (occ)' },
   { id: 'openclaude', label: 'OpenClaude' },
   { id: 'claude-cli', label: 'Claude Code CLI' },
+  { id: 'lm-studio', label: 'LM Studio / OpenAI-compatible' },
   { id: 'openai-http', label: 'OpenAI (HTTP)' },
 ];
 

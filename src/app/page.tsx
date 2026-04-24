@@ -36,7 +36,7 @@ const PHASE_PROGRESS: Record<string, number> = {
   deploy: 95, complete: 100,
 };
 
-const MODEL_OPTIONS = [
+const INITIAL_MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Opus 4.6' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
 ];
@@ -54,6 +54,8 @@ export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
+  const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
+  const availableModelCount = modelOptions.filter((o) => !!o.value).length;
   const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
@@ -77,6 +79,31 @@ export default function PipelinePage() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data?.models) ? data.models : [];
+
+        if (list.length > 0) {
+          const opts = list.map((m: string) => ({ value: m, label: m }));
+          setModelOptions(opts);
+          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+        } else {
+          // No models discovered — present a single placeholder so the UI
+          // can indicate there are no choices available.
+          setModelOptions([{ value: '', label: 'No models available' }]);
+          setSelectedModel('');
+        }
+      } catch {
+        // On network/parse errors, leave existing options in place.
+      }
+    })();
+  }, [selectedProvider]);
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -436,11 +463,12 @@ export default function PipelinePage() {
               {/* Model Picker — manual mode only */}
               {!isPipeline && (
                 <div className="flex gap-2">
-                  <select
-                    value={selectedProvider}
-                    onChange={(e) => setSelectedProvider(e.target.value)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
-                  >
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value)}
+                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                    >
                     {availableProviders.length === 0 ? (
                       <option value="claude-cli">Claude</option>
                     ) : (
@@ -448,15 +476,18 @@ export default function PipelinePage() {
                         <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
                       ))
                     )}
-                  </select>
+                    </select>
+
+                    <div className="text-[11px] text-slate-400">Models: <span className="font-mono">{availableModelCount}</span></div>
+                  </div>
 
                   <select
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
                     className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
                   >
-                    {MODEL_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]">{opt.label}</option>
+                    {modelOptions.map(opt => (
+                      <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]" disabled={opt.value === ''}>{opt.label}</option>
                     ))}
                   </select>
                 </div>

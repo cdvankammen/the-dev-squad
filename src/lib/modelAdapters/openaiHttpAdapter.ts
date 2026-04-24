@@ -22,6 +22,12 @@ export class OpenAIHttpAdapter implements ModelAdapter {
     // supports on('close', ...).
     throw new Error('OpenAIHttpAdapter.spawn is a stub — implement network streaming or a local shim.');
   }
+
+  async discoverModels(): Promise<string[]> {
+    const m = process.env.OPENAI_MODEL;
+    if (m) return [m];
+    return [];
+  }
 }
 
 export default OpenAIHttpAdapter;

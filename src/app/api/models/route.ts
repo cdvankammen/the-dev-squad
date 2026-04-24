@@ -13,19 +13,44 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const provider = (url.searchParams.get('provider') || 'claude-cli').toLowerCase();
 
-    // Ask adapter if it supports discovery (best-effort). Fall back to defaults.
     const adapter = getModelAdapter(provider);
+    let models: string[] = [];
+    let usedDiscovery = false;
+    let fallbackUsed = false;
+
     if (adapter && typeof (adapter as any).discoverModels === 'function') {
       try {
-        const models = await (adapter as any).discoverModels();
-        if (Array.isArray(models) && models.length > 0) return NextResponse.json({ provider, models });
+        usedDiscovery = true;
+        const discovered = await (adapter as any).discoverModels();
+        if (Array.isArray(discovered)) models = discovered.filter(Boolean);
       } catch {
-        // ignore discovery failures
+        // discovery failed — fall through to fallback
+      }
+    }
+    // If discovery ran and returned an empty list, prefer returning the
+    // empty result so the UI can show an explicit 'no models' state. Only
+    // fall back to environment/defaults when discovery did not run or
+    // failed to produce results.
+    if (usedDiscovery && (!models || models.length === 0)) {
+      return NextResponse.json({ provider, models: [], modelCount: 0, usedDiscovery, fallbackUsed: false });
+    }
+
+    if ((!models || models.length === 0)) {
+      // Discovery was not available or not used — try env-driven defaults
+      // and then the built-in DEFAULT_MODELS fallback.
+      const envModel = process.env.OPENAI_MODEL;
+      if (provider === 'openclaude' || provider === 'openai-http') {
+        if (envModel) models = [envModel];
+      }
+      if (!models || models.length === 0) {
+        const fallback = DEFAULT_MODELS[provider] || DEFAULT_MODELS['claude-cli'] || [];
+        models = fallback.slice();
+        fallbackUsed = models.length > 0;
       }
     }
 
-    return NextResponse.json({ provider, models: DEFAULT_MODELS[provider] || DEFAULT_MODELS['claude-cli'] });
+    return NextResponse.json({ provider, models, modelCount: models.length, usedDiscovery, fallbackUsed });
   } catch (err) {
-    return NextResponse.json({ provider: 'unknown', models: [], error: String(err) }, { status: 500 });
+    return NextResponse.json({ provider: 'unknown', models: [], modelCount: 0, error: String(err) }, { status: 500 });
   }
 }

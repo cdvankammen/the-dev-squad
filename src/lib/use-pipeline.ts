@@ -179,7 +179,7 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider }: 
     }
 
     return res.json();
-  }, [mode, model]);
+  }, [mode, model, provider]);
 
   const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
     const res = await fetch('/api/start-pipeline', {
