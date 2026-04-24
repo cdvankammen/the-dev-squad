@@ -53,6 +53,8 @@ const MANUAL_ROLES: Record<string, string> = {
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
@@ -61,7 +63,20 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/providers');
+        const data = await res.json();
+        const list = Array.isArray(data?.providers) ? data.providers : [];
+        setAvailableProviders(list);
+        const first = list.find((p: any) => p.available) || list[0];
+        if (first) setSelectedProvider(first.id);
+      } catch {}
+    })();
+  }, []);
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -420,15 +435,31 @@ export default function PipelinePage() {
               </div>
               {/* Model Picker — manual mode only */}
               {!isPipeline && (
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
-                >
-                  {MODEL_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]">{opt.label}</option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                  >
+                    {availableProviders.length === 0 ? (
+                      <option value="claude-cli">Claude</option>
+                    ) : (
+                      availableProviders.map((p) => (
+                        <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                      ))
+                    )}
+                  </select>
+
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                  >
+                    {MODEL_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]">{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
             <div className={`mt-3 rounded-xl border px-3 py-3 ${

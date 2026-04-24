@@ -111,6 +111,7 @@ interface UsePipelineOptions {
   pollInterval?: number;
   mode: AppMode;
   model: string;
+  provider?: string;
 }
 
 interface SendChatOptions {
@@ -120,7 +121,7 @@ interface SendChatOptions {
   runFinalAudit?: boolean;
 }
 
-export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelineOptions) {
+export function usePipelineState({ pollInterval = 400, mode, model, provider }: UsePipelineOptions) {
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,12 +156,28 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
         message,
         mode,
         model,
+        modelProvider: provider,
         securityMode: options?.securityMode,
         permissionMode: options?.permissionMode,
         runGoal: options?.runGoal,
         runFinalAudit: options?.runFinalAudit,
       }),
     });
+
+    // Defensive parsing: surface helpful errors when the server returns
+    // non-JSON or an empty body instead of letting res.json() throw a
+    // generic 'Unexpected end of JSON input'.
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Chat API error ${res.status}: ${text || res.statusText}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Chat API returned non-JSON response: ${text || '<empty body>'}`);
+    }
+
     return res.json();
   }, [mode, model]);
 

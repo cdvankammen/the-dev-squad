@@ -3,6 +3,7 @@ import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
 import { NextRequest, NextResponse } from 'next/server';
+import { appendServerLog } from '@/lib/server-logging';
 import {
   createRunner,
   isRecoverableDockerAuthFailure,
@@ -23,6 +24,7 @@ import {
   type RunGoal,
   type SecurityMode,
 } from '@/lib/pipeline-control';
+import { retrieve } from '@/lib/rag/localRetriever';
 import { parseSupervisorIntent } from '@/lib/supervisor-intents';
 
 const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
@@ -334,7 +336,7 @@ function streamClaude(
 
 // ── Manual mode ─────────────────────────────────────────────────────
 
-function handleManual(agent: string, message: string, model: string) {
+async function handleManual(agent: string, message: string, model: string, modelProvider?: string) {
   const eventsFile = join(MANUAL_DIR, 'manual-state.json');
   const state = getManualState();
   const sessions = (state.sessions as Record<string, string>) || {};
@@ -358,7 +360,23 @@ function handleManual(agent: string, message: string, model: string) {
   state.events = events;
   writeFileSync(eventsFile, JSON.stringify(state, null, 2));
 
-  const safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
+  let safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
+
+  // Attempt RAG retrieval and prepend results to the message if available
+  try {
+    if (process.env.DISABLE_RAG !== '1') {
+      const hits = await retrieve(message, 5);
+      if (hits && hits.length) {
+        const snippets = hits
+          .map((h, i) => `Source ${i + 1} (${h.meta.path || h.id})\n${(h.text || '').slice(0, 800)}`)
+          .join('\n\n---\n\n');
+          const ragPrefix = `[RETRIEVED SOURCES]\n${snippets}\n[END RETRIEVED]\n\n`;
+          safeMessage = ragPrefix + safeMessage;
+      }
+    }
+  } catch (e) {
+    // retrieval failed silently — continue without RAG
+  }
 
   return streamClaude(
     {
@@ -367,6 +385,7 @@ function handleManual(agent: string, message: string, model: string) {
       model,
       resume: sessionId || undefined,
       systemPrompt: sessionId ? undefined : (MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A),
+      modelProvider,
     },
     eventsFile,
     agent,
@@ -376,9 +395,10 @@ function handleManual(agent: string, message: string, model: string) {
 
 // ── Pipeline mode ───────────────────────────────────────────────────
 
-function handlePipeline(
+async function handlePipeline(
   agent: string,
   message: string,
+  modelProvider?: string,
   defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean }
 ) {
   let projectDir: string;
@@ -579,6 +599,7 @@ function handlePipeline(
           resume: sessionId || undefined,
           pipelineAgent: 'S',
           securityMode,
+          modelProvider,
         },
         eventsFile,
         agent,
@@ -618,6 +639,21 @@ function handlePipeline(
   appendUserEvent(state, agent, message);
   writeState(eventsFile, state);
 
+  // Attempt RAG retrieval and prepend context to the prompt for the agent
+  try {
+    if (process.env.DISABLE_RAG !== '1') {
+      const hits = await retrieve(message, 5);
+      if (hits && hits.length) {
+        const snippets = hits
+          .map((h, i) => `Source ${i + 1} (${h.meta.path || h.id})\n${(h.text || '').slice(0, 800)}`)
+          .join('\n\n---\n\n');
+        finalMessage = `[RETRIEVED SOURCES]\n${snippets}\n[END RETRIEVED]\n\n` + finalMessage;
+      }
+    }
+  } catch (e) {
+    // ignore retrieval errors and proceed
+  }
+
   return streamClaude(
     {
       prompt: finalMessage,
@@ -628,6 +664,7 @@ function handlePipeline(
       resume: sessionId || undefined,
       pipelineAgent: agent as PipelineAgentId,
       securityMode,
+      modelProvider,
     },
     eventsFile,
     agent,
@@ -638,15 +675,28 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { agent, message, mode, model, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
+  try {
+    const body = await req.json();
+    const { agent, message, mode, model, modelProvider, securityMode, permissionMode, runGoal, runFinalAudit } = body || {};
 
-  if (mode === 'manual') {
-    return handleManual(agent, message, model || 'claude-sonnet-4-6');
+    if (mode === 'manual') {
+      return handleManual(agent, message, model || 'claude-sonnet-4-6', modelProvider);
+    }
+
+    return handlePipeline(agent, message, modelProvider, {
+      securityMode: securityMode === 'strict' ? 'strict' : 'fast',
+      permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
+      runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',
+      runFinalAudit: runFinalAudit === true,
+    });
+  } catch (err) {
+    // Ensure the API always returns JSON so the client can parse and surface
+    // a meaningful error rather than crashing with an unexpected JSON parse
+    // failure. Persist the error to a server-side log for debugging.
+    try {
+      appendServerLog(String(err instanceof Error ? err.stack || err.message : err), { route: 'api/chat' });
+    } catch {}
+    console.error('[api/chat] unexpected error:', err);
+    return NextResponse.json({ success: false, error: String(err) }, { status: 500 });
   }
-  return handlePipeline(agent, message, {
-    securityMode: securityMode === 'strict' ? 'strict' : 'fast',
-    permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
-    runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',
-    runFinalAudit: runFinalAudit === true,
-  });
 }

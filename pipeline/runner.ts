@@ -393,24 +393,47 @@ export function buildDockerArgs(
 
 export class HostRunner implements Runner {
   spawn(opts: RunnerOptions): SpawnedRunnerChild {
-    const provider = opts.modelProvider ?? 'claude-cli';
-    const adapter = getModelAdapter(provider);
-
-    if (adapter && adapter.isAvailable()) {
-      try {
-        const child = adapter.spawn({
-          args: buildClaudeArgs(opts),
-          cwd: opts.projectDir,
-          env: buildRunnerEnv(opts),
-        });
-        return withBackend(child, 'host');
-      } catch (err) {
-        console.warn(`[ModelAdapter] adapter for '${provider}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; falling back to claude-cli`);
+    // If a provider was explicitly requested, prefer it (and warn/fallback
+    // if it's not available). If none was requested, auto-detect a preferred
+    // adapter order from the environment or a sensible default.
+    if (opts.modelProvider) {
+      const provider = opts.modelProvider;
+      const adapter = getModelAdapter(provider);
+      if (adapter && adapter.isAvailable()) {
+        try {
+          const child = adapter.spawn({ args: buildClaudeArgs(opts), cwd: opts.projectDir, env: buildRunnerEnv(opts) });
+          return withBackend(child, 'host');
+        } catch (err) {
+          console.warn(`[ModelAdapter] adapter for '${provider}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; falling back to claude-cli`);
+        }
+      } else {
+        console.warn(`[ModelAdapter] requested provider '${provider}' not available; falling back to claude-cli`);
       }
-    } else if (opts.modelProvider) {
-      console.warn(`[ModelAdapter] requested provider '${opts.modelProvider}' not available; falling back to claude-cli`);
+    } else {
+      const preferred = (process.env.PIPELINE_PREFERRED_PROVIDERS || 'occ,openclaude,claude-cli')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (const p of preferred) {
+        const adapter = getModelAdapter(p);
+        if (!adapter) continue;
+        try {
+          if (!adapter.isAvailable()) continue;
+        } catch {
+          continue;
+        }
+
+        try {
+          const child = adapter.spawn({ args: buildClaudeArgs(opts), cwd: opts.projectDir, env: buildRunnerEnv(opts) });
+          return withBackend(child, 'host');
+        } catch (err) {
+          console.warn(`[ModelAdapter] adapter for '${p}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; trying next provider`);
+        }
+      }
     }
 
+    // Last-resort: spawn the legacy `claude` CLI on PATH.
     return withBackend(nodeSpawn('claude', buildClaudeArgs(opts), {
       cwd: opts.projectDir,
       stdio: ['pipe', 'pipe', 'pipe'],

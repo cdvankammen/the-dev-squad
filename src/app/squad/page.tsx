@@ -64,6 +64,8 @@ export default function SquadPage() {
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [rightTab, setRightTab] = useState<'next' | 'activity' | 'controls'>('next');
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
+  const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
@@ -81,7 +83,20 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/providers');
+        const data = await res.json();
+        const list = Array.isArray(data?.providers) ? data.providers : [];
+        setAvailableProviders(list);
+        const first = list.find((p: any) => p.available) || list[0];
+        if (first) setSelectedProvider(first.id);
+      } catch {}
+    })();
+  }, []);
 
   useEffect(() => {
     if (mode !== 'pipeline') return;
@@ -209,17 +224,33 @@ export default function SquadPage() {
               {!isPipeline && (
                 <div>
                   <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Model</div>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                  >
-                    {MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-[#121522]">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value)}
+                      className="w-36 rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                    >
+                      {availableProviders.length === 0 ? (
+                        <option value="claude-cli">Claude</option>
+                      ) : (
+                        availableProviders.map((p) => (
+                          <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                        ))
+                      )}
+                    </select>
+
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                    >
+                      {MODEL_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value} className="bg-[#121522]">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
