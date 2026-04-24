@@ -69,6 +69,9 @@ python3 devSquadMemory/query_helper.py --query "how does the runner spawn claude
 
 Provider reality check
 ----------------------
-- Working executable providers in this repo today: `claude-cli`, `occ`, `openclaude`
-- Discovery-only / not executable as direct runners: `openai-http`, `lm-studio`
-- For LM Studio, Ollama, OpenRouter, Groq, DeepSeek, or other OpenAI-compatible backends, use the `openclaude` provider and point OpenClaude at that backend.
+- Executable providers in this repo today: `claude-cli`, `occ`, `openclaude`, `openai-http`, `lm-studio`
+- `openai-http` and `lm-studio` execute through `scripts/http-runner-shim.mjs` (OpenAI-compatible HTTP bridge).
+- For LM Studio, Ollama, OpenRouter, Groq, DeepSeek, or other OpenAI-compatible backends, you can use either:
+  - `openclaude` as router, or
+  - direct `openai-http` / `lm-studio` provider selection.
+- Runtime success still depends on environment credentials/endpoints (Bedrock/AWS, Anthropic/OpenAI keys, local server availability, etc.).

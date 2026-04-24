@@ -294,6 +294,26 @@ function streamClaude(
           if (cost && s.usage) s.usage.totalCostUsd = (s.usage.totalCostUsd || 0) + cost;
           writeFileSync(eventsFile, JSON.stringify(s, null, 2));
         } catch {}
+      } else if (type === 'error') {
+        const message = typeof event.message === 'string'
+          ? event.message
+          : JSON.stringify(event.message ?? event);
+        if (message) {
+          const rendered = `[provider-error] ${message}`;
+          lastResultText = rendered;
+          noteDiagnostic(rendered);
+          try {
+            const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+            s.events.push({
+              time: new Date().toISOString(),
+              agent,
+              phase: s.currentPhase || 'concept',
+              type: 'failure',
+              text: rendered,
+            });
+            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          } catch {}
+        }
       }
     });
 

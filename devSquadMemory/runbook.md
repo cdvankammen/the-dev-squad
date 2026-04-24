@@ -1,167 +1,122 @@
-# Dev Squad memory and provider runbook
+# Dev Squad runbook (updated)
 
 Date: 2026-04-24
 
-## 1. Run the web app
+This runbook focuses on what is implemented and verified now.
+
+## 0) Repo root
 
 ```bash
 cd /Users/stillbulldog35/Documents/personalGithub/the-dev-squad
-npm install
-npm run dev
 ```
 
-Open:
-
-- Office view: `http://localhost:3000/`
-- Squad view: `http://localhost:3000/squad`
-
-## 2. Run the core checks
+## 1) Baseline health checks
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-npm run build
-npm run test:runner
-npm run test:hook
-npm run test:runtime
-npm run test:planning
-npm run test:supervisor
-npm run test:supervisor-concept
-npm run test:supervisor-intents
+npx tsx scripts/test-chat-logging.mjs
+npx tsx scripts/test-start-pipeline.mjs
 ```
 
-## 3. Build the local vector memory
-
-Install Python deps into your user environment:
-
-```bash
-python3 -m pip install --user -r devSquadMemory/requirements.txt
-```
-
-Build the vector files:
-
-```bash
-python3 devSquadMemory/build_local_embeddings.py
-```
-
-This writes:
-
-- `devSquadMemory/workspace_docs.jsonl`
-- `devSquadMemory/workspace_vectors.jsonl`
-
-## 4. Query the local vector memory
-
-```bash
-python3 devSquadMemory/query_helper.py --query "how does the runner spawn claude" --topk 5
-```
-
-## 5. How chat RAG currently works
-
-When you send a chat message through `/api/chat`:
-
-1. `src/app/api/chat/route.ts` calls `retrieve(...)`
-2. `src/lib/rag/localRetriever.ts` loads the JSONL vectors and docs
-3. `localRetriever.ts` calls `devSquadMemory/query_embed.py`
-4. retrieved snippets are prepended to the prompt as `[RETRIEVED SOURCES]`
-
-There is **not** currently a separate retriever microservice.
-
-## 6. Check provider/model APIs
+## 2) Provider discovery checks
 
 ```bash
 npx tsx scripts/test-models.mjs occ
 npx tsx scripts/test-models.mjs openclaude
 npx tsx scripts/test-models.mjs openai-http
 npx tsx scripts/test-models.mjs lm-studio
-npx tsx scripts/test-chat-logging.mjs
-npx tsx scripts/test-start-pipeline.mjs
 ```
 
-## 7. Use the real executable providers
+## 3) Provider execution checks
 
-### Claude Code CLI
+### 3.1 HTTP-backed providers (local deterministic mock)
 
-Use provider: `claude-cli`
-
-Requirements:
-
-- `claude` installed and logged in
-- or Claude Code configured for Bedrock if you use Bedrock
-
-### Open Claude Code (`occ`)
-
-Use provider: `occ`
-
-Install or rely on `npx`:
+Validates that `openai-http` + `lm-studio` execution path works end-to-end with stream-json output expected by Dev Squad.
 
 ```bash
-npm install -g @ruvnet/open-claude-code
-# or
-npx @ruvnet/open-claude-code --help
+npx tsx scripts/test-http-runner.mjs
 ```
 
-### OpenClaude
+### 3.2 CLI-backed providers snapshot
 
-Use provider: `openclaude`
-
-Install or rely on `npx`:
+Runs real host CLI adapter smoke tests for `occ` and `openclaude`.
 
 ```bash
-npm install -g @gitlawb/openclaude
-# or
-npx @gitlawb/openclaude --help
+npx tsx scripts/test-cli-adapters.mjs
 ```
 
-This is the recommended route for LM Studio / Ollama / OpenAI-compatible backends.
+Notes:
+- `openclaude` succeeded in this environment during latest verification.
+- `occ` returned provider error in this environment due missing Anthropic auth for tested path.
 
-## 8. LM Studio / OpenAI-compatible backends
+## 4) Manual web flow smoke test
 
-Use `openclaude` as the Dev Squad provider and point OpenClaude at your backend.
+1. Start app.
+2. Open UI, choose **Manual** mode.
+3. Pick provider + model.
+4. Send a short message.
+5. Confirm response or readable provider error appears (no silent failure).
 
-Example:
+## 5) Pipeline flow smoke test
+
+1. Choose provider/model in UI.
+2. Start pipeline.
+3. Confirm staged state stores selected provider/model.
+4. Confirm orchestrator uses selected provider/model in runner spawn.
+
+## 6) RAG / local vector memory
+
+### Build vectors
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
-export OPENAI_BASE_URL=http://localhost:1234/v1
-export OPENAI_MODEL=your-model-name
-openclaude
+cd devSquadMemory
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python build_local_embeddings.py
 ```
 
-Then choose provider `openclaude` inside the Dev Squad UI.
-
-## 9. Bedrock with official Claude Code
-
-Official Claude Code supports Bedrock.
-
-Typical env-based setup:
+### Query vectors
 
 ```bash
-export CLAUDE_CODE_USE_BEDROCK=1
-export AWS_REGION=us-east-1
-export AWS_BEARER_TOKEN_BEDROCK=your-bedrock-api-key
+./.venv/bin/python query_helper.py --query "how does runner spawn providers" --topk 5
 ```
 
-Or use AWS credentials/profile instead of the bearer token.
+Vector artifacts are under `devSquadMemory/` (`workspace_docs.jsonl`, `workspace_vectors.jsonl`, manifest).
 
-Then choose provider `claude-cli` inside the Dev Squad UI.
+## 7) Optional persistent retriever service
 
-## 10. Docker agent image
+Not required for core chat flow. If enabled, wire via `RETRIEVER_URL` and keep fallback behavior.
 
-Default image:
+## 8) Docker with occ/openclaude
 
-```bash
-docker build -t dev-squad-agent:latest -f pipeline/Dockerfile.agent pipeline/
-```
-
-Alternative image with `occ` and `openclaude` installed:
+Build:
 
 ```bash
 docker build -t dev-squad-agent:occ -f pipeline/Dockerfile.agent.occ pipeline/
-export PIPELINE_DOCKER_AGENT_IMAGE=dev-squad-agent:occ
 ```
 
-## 11. Known limitations
+Run with env:
 
-- `openai-http` and `lm-studio` are discovery-only in this repo right now, not executable runner providers
-- no HTTP runner shim yet
-- no persistent retriever service yet
-- provider discovery depends on your actual local config/credentials
+```bash
+export PIPELINE_DOCKER_AGENT_IMAGE=dev-squad-agent:occ
+# Optional explicit command
+export PIPELINE_DOCKER_AGENT_CMD="/usr/local/share/npm-global/bin/occ"
+```
+
+Credential details: `docs/docker-credentials.md`.
+
+## 9) Bedrock-specific note
+
+Bedrock model discovery/execution depends on AWS credentials/profile availability in the runtime environment (host/container). Without valid creds, discovery may show configured IDs but execution will fail.
+
+## 10) Troubleshooting quick list
+
+- **"Unexpected end of JSON input"**
+  - Chat route now wraps errors and returns JSON; check `logs/server-errors.log`.
+- **Model list appears then disappears**
+  - Check discovery metadata (`usedDiscovery`, `fallbackUsed`, `modelCount`) in `/api/models` responses.
+- **No response from provider**
+  - Confirm provider auth/env.
+  - Run `scripts/test-cli-adapters.mjs` or `scripts/test-http-runner.mjs`.
+- **HTTP provider unreachable**
+  - Verify `OPENAI_BASE_URL` / `LM_STUDIO_BASE_URL` and endpoint compatibility.

@@ -689,6 +689,20 @@ async function runClaudeTurn(
             toolInput: (bashDenial.tool_input as Record<string, unknown>) || {},
           };
         }
+      } else if (type === 'error') {
+        const providerMessage = typeof event.message === 'string'
+          ? event.message
+          : JSON.stringify(event.message ?? event);
+        const rendered = `[provider-error] ${providerMessage}`;
+        noteDiagnostic(rendered);
+        emit(agent, state.currentPhase, 'failure', rendered);
+        lastResult = {
+          type: 'result',
+          subtype: 'error',
+          is_error: true,
+          result: rendered,
+          session_id: currentSessionId,
+        };
       }
     });
 

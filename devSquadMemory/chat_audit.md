@@ -1,93 +1,60 @@
-# Dev Squad chat audit
+# Dev Squad chat audit (latest)
 
 Date: 2026-04-24
 
 ## Scope
 
-This is a verification audit of the substantive implementation claims made in the pasted Copilot chat.
-I did **not** try to validate every filler sentence literally word-for-word; I audited every meaningful claim about files, code paths, tests, providers, RAG, Docker, and UI behavior against the current repository.
+This audit re-checks the substantive implementation claims from the pasted Copilot conversation against the current repository state.
+
+I audited meaningful claims (code paths, files, provider behavior, tests, RAG, Docker, UI state), not literal filler wording.
 
 ## Verdict summary
 
-### Verified true
+## Verified true
 
-- `devSquadMemory/` exists in the workspace and contains the research docs, embedding scripts, and vector artifacts.
-- Local vector-memory files exist:
-  - `devSquadMemory/workspace_docs.jsonl`
-  - `devSquadMemory/workspace_vectors.jsonl`
-  - `devSquadMemory/build_local_embeddings.py`
-  - `devSquadMemory/query_helper.py`
-  - `devSquadMemory/query_embed.py`
-- Chat RAG injection exists in `src/app/api/chat/route.ts` and uses `src/lib/rag/localRetriever.ts`.
-- Provider/model UI exists in both:
-  - `src/app/page.tsx`
-  - `src/app/squad/page.tsx`
-- Provider/model APIs exist:
-  - `src/app/api/providers/route.ts`
-  - `src/app/api/models/route.ts`
-  - `src/app/api/health/route.ts`
-- Adapter files exist:
-  - `src/lib/modelAdapters/claudeCliAdapter.ts`
-  - `src/lib/modelAdapters/openClaudeCodeAdapter.ts`
-  - `src/lib/modelAdapters/openClaudeAdapter.ts`
+- `devSquadMemory/` exists in-workspace and contains research/docs/scripts/vector artifacts.
+- Local vector-memory artifacts exist and are queryable (`workspace_docs.jsonl`, `workspace_vectors.jsonl`, embed/query scripts).
+- Chat RAG injection is active (`src/app/api/chat/route.ts` + `src/lib/rag/localRetriever.ts`).
+- Provider/model APIs and UI controls exist in Office + Squad views.
+- Adapter routing exists for `claude-cli`, `occ`, `openclaude`, `openai-http`, `lm-studio`.
+- Server-side JSON error handling/logging is present for `/api/chat`.
+- Pipeline start persists selected provider/model into staging and orchestrator uses it.
+
+## Verified true after fixes in this pass
+
+- `openai-http` and `lm-studio` are now executable providers (not discovery-only) via:
+  - `scripts/http-runner-shim.mjs`
   - `src/lib/modelAdapters/openaiHttpAdapter.ts`
   - `src/lib/modelAdapters/lmStudioAdapter.ts`
-- Docker support exists for the default Claude image and a second image file exists at `pipeline/Dockerfile.agent.occ`.
-- Persistent server-side error logging exists in `src/lib/server-logging.ts` and `/api/chat` now returns JSON errors instead of crashing the client parser.
+- Provider `type:"error"` events are now surfaced (not silently ignored):
+  - `src/app/api/chat/route.ts`
+  - `pipeline/orchestrator.ts`
+- HTTP execution compatibility is validated using a local mock OpenAI-compatible server:
+  - `scripts/test-http-runner.mjs`
 
-### Verified partially true
+## Verified partially true
 
-- **Model/provider switching exists, but only fully works for CLI-style providers**.
-  - Working executable providers in the repo today: `claude-cli`, `occ`, `openclaude`.
-  - `openai-http` and `lm-studio` existed only as discovery stubs, not executable runner providers.
-- **Bedrock support is real**, but only when the runtime environment or Claude settings already contain the necessary Bedrock configuration.
-  - This repo can surface/select configured Bedrock model IDs.
-  - It cannot magically discover account-specific Bedrock availability without the same credentials/settings your local Claude/OpenClaude installation uses.
-- **Model discovery existed**, but the original implementation over-parsed CLI output and produced junk model IDs. This was tightened during the audit.
-- **Pipeline model selection existed**, but `/api/chat` pipeline turns were still hardcoded to `claude-opus-4-6`. This was fixed during the audit.
+- Bedrock support: possible and wired through provider selection, **but requires runtime AWS/provider credentials/config** in the host/container environment.
+- Provider discovery: works, but may include configured model IDs even if backend connectivity/auth is not currently valid.
 
-### Verified false before this audit
+## Still not implemented / still optional
 
-These claims were overstated or untrue when I checked the repo:
+- Persistent retriever microservice (`RETRIEVER_URL`) remains optional/not required for current RAG path.
+- Full provider-specific model catalog fidelity depends on each upstream CLI/API behavior.
 
-- “OpenAI HTTP / LM Studio are usable as runner providers.”
-  - False before audit. Those adapters threw stub errors and silently fell back.
-- “Provider fallback to `npx` is implemented for `occ` and `openclaude`.”
-  - False before audit. The command detection used `spawn('which', ...)`, which does not validate exit codes, so the fallback logic was unreliable.
-- “The repo build is good with the current workspace memory setup.”
-  - False before audit. `devSquadMemory/.venv` broke `npm run build` because Turbopack traversed the workspace and hit invalid symlinks.
-- “HTTP-runner shim exists.”
-  - False. It was planned, not implemented.
-- “Persistent retriever service using `RETRIEVER_URL` exists.”
-  - False. It was described/planned, but `localRetriever.ts` still uses local JSONL + Python query embedding directly.
-- “Top-k and snippet length are configurable via env vars.”
-  - False. The current retriever path does not implement those env controls.
+## Execution snapshot from latest tests
 
-## Fixes applied during this audit
-
-I corrected the most misleading issues while auditing:
-
-- Fixed provider command detection and `npx` fallback logic.
-- Marked direct HTTP adapters as discovery-only, not executable runner providers.
-- Made `/api/chat` and `/api/start-pipeline` reject unsupported providers honestly instead of silently falling back.
-- Made pipeline chat turns honor the selected model instead of always using `claude-opus-4-6`.
-- Removed the build-breaking `devSquadMemory/.venv` and updated docs to avoid recreating that problem.
-- Updated package test scripts to use `npx tsx` instead of unsupported `node --experimental-strip-types` flags.
-- Tightened model-discovery parsing to reduce junk results.
-
-## Remaining limitations
-
-These are still not implemented:
-
-- A real HTTP runner shim for OpenAI-compatible / LM Studio direct execution.
-- A persistent retriever microservice (`RETRIEVER_URL`).
-- Strong provider-specific model discovery for every backend.
-- First-class direct pipeline execution against plain HTTP model endpoints.
+- `openclaude`: execution smoke test succeeded.
+- `occ`: discovery works; execution returned provider auth error in this environment for tested path.
+- `openai-http` + `lm-studio`: execution compatibility verified through local mock HTTP backend.
 
 ## Practical conclusion
 
-If you want this repo to behave truthfully today:
+Today’s repo is now coherent for:
 
-- Use `claude-cli`, `occ`, or `openclaude` as the actual executable providers.
-- Use `openclaude` if you want LM Studio, Ollama, OpenRouter, Groq, DeepSeek, or other OpenAI-compatible/local backends.
-- Use official Claude Code (`claude`) if you want native Bedrock support through Anthropic’s documented Bedrock flow.
+- CLI providers (`claude-cli`, `occ`, `openclaude`)
+- HTTP-compatible providers (`openai-http`, `lm-studio`) via shim
+- Manual + pipeline provider/model selection
+- In-workspace RAG/vector memory usage
+
+Final runtime success for cloud/backed providers still depends on your actual credentials/endpoints.

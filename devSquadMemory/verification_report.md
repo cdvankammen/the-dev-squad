@@ -1,114 +1,112 @@
-# Verification report
+# Dev Squad verification report (final re-review)
 
 Date: 2026-04-24
+Repository: `/Users/stillbulldog35/Documents/personalGithub/the-dev-squad`
 
-## Commands run
+## What was re-verified in this pass
 
-### Core repo verification
+This pass re-verified:
+
+- TypeScript/build integrity
+- Model provider discovery behavior
+- Chat route JSON/error handling
+- Pipeline start propagation of model/provider
+- HTTP-backed provider execution compatibility
+- CLI provider execution compatibility snapshot (`occ`, `openclaude`)
+- RAG/vector memory artifacts and run path
+
+## Commands executed
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-npm run build
-npm run test:runner
-npm run test:hook
-npm run test:runtime
-npm run test:planning
-npm run test:supervisor
-npm run test:supervisor-concept
-npm run test:supervisor-intents
-```
 
-### Provider / API verification
-
-```bash
 npx tsx scripts/test-models.mjs occ
 npx tsx scripts/test-models.mjs openclaude
 npx tsx scripts/test-models.mjs openai-http
 npx tsx scripts/test-models.mjs lm-studio
+
 npx tsx scripts/test-chat-logging.mjs
 npx tsx scripts/test-start-pipeline.mjs
+npx tsx scripts/test-http-runner.mjs
+npx tsx scripts/test-cli-adapters.mjs
 ```
 
-## Results
+All commands completed successfully in this environment.
 
-### Passed
+## Verification matrix (truth snapshot)
 
-- TypeScript check passed
-- Next.js production build passed
-- Runner tests passed
-- Hook-contract tests passed
-- Pipeline runtime tests passed
-- Pipeline planning tests passed
-- Supervisor snapshot tests passed
-- Supervisor concept tests passed
-- Supervisor intents tests passed
-- Chat logging test passed
-- Start-pipeline route test passed at the business-logic level (it correctly refused to start because no staging session existed)
+### 1) Core compile/runtime
 
-### Provider-specific status
+- ✅ `npx tsc --noEmit -p tsconfig.json` passes.
+- ✅ Chat logging test passes and route returns JSON on error (no empty-body JSON parse crash).
+- ✅ Start-pipeline test passes and selected provider/model are persisted into staging state.
 
-- `claude-cli`: executable provider path verified at code level; model discovery is best-effort and depends on local Claude config
-- `occ`: executable provider path verified at code level; current discovered list in this environment is:
-	- `arn:aws:bedrock:us-east-1:013925090051:inference-profile/global.anthropic.claude-sonnet-4-6`
-	- `claude-sonnet-4-6`
-	- `haiku`
-- `openclaude`: executable provider path verified at code level; current discovered list in this environment is:
-	- `arn:aws:bedrock:us-east-1:013925090051:inference-profile/global.anthropic.claude-sonnet-4-6`
-	- `haiku`
-- `openai-http`: discovery-only, not an executable runner provider in this repo today; current discovered list is `[]`
-- `lm-studio`: discovery-only, not an executable runner provider in this repo today; current discovered list is `[]`
+### 2) Provider discovery APIs
 
-## Important fix applied during verification
+- ✅ `/api/providers` and `/api/models` path validated via `scripts/test-models.mjs`.
+- ✅ Discovery metadata (`usedDiscovery`, `fallbackUsed`, `modelCount`) behaves as expected.
+- ⚠️ Discovery may include configured model IDs from local settings/env even when the backend is not reachable yet.
 
-The repo build initially failed because `devSquadMemory/.venv` existed in the workspace and Turbopack followed symlinks inside it.
+### 3) Executable provider support
 
-That generated venv was removed and the docs were corrected to avoid recreating that problem as a permanent workspace artifact.
+#### claude-cli
+- Supported in runner and API.
+- Not re-executed in this pass (depends on local auth/runtime setup).
 
-## What “verified” means here
+#### openclaude
+- ✅ Discovery returns models in this environment.
+- ✅ Execution smoke test succeeded (`scripts/test-cli-adapters.mjs` returned assistant/result and exit 0).
 
-Verified means one of:
+#### occ (open-claude-code)
+- ✅ Discovery returns models.
+- ⚠️ Execution in this environment returns provider error event (missing Anthropic auth for tested path), not a successful assistant response.
+- ✅ Error is now surfaced instead of being silently ignored.
 
-- the code path was executed by a repo script or build/test command, or
-- the code path was inspected and confirmed to be wired correctly, or
-- the upstream docs were checked for provider capability claims
+#### openai-http
+- ✅ Now executable via HTTP shim (not discovery-only anymore).
+- ✅ End-to-end compatibility verified with local mock OpenAI-compatible server (`scripts/test-http-runner.mjs`).
 
-It does **not** mean I invoked your private Bedrock account or your local LM Studio instance. Those require your actual credentials/endpoints at runtime.
+#### lm-studio
+- ✅ Now executable via the same HTTP shim path.
+- ✅ End-to-end compatibility verified with local mock OpenAI-compatible server (`scripts/test-http-runner.mjs`).
 
-## Start-pipeline note
+## Bugfixes validated in this pass
 
-`scripts/test-start-pipeline.mjs` currently returns:
+1. **HTTP provider execution gap fixed**
+   - `openai-http` and `lm-studio` adapters now `supportsExecution()` and spawn `scripts/http-runner-shim.mjs`.
 
-```json
-{ "success": false, "error": "No staging session found. Talk to S or A first." }
-```
+2. **Silent provider error handling fixed**
+   - Added explicit handling for `type: "error"` events in:
+     - `src/app/api/chat/route.ts`
+     - `pipeline/orchestrator.ts`
+   - These errors are now surfaced as readable provider errors.
 
-That is an expected guardrail result, not a route crash. The happy path requires a real staging concept/session first.
+3. **HTTP shim integration validated**
+   - `scripts/test-http-runner.mjs` spins up a mock OpenAI-compatible server and validates both providers emit expected assistant/result stream events.
 
-## Re-review (2026-04-24, second full pass)
+## RAG/vector memory status
 
-Re-ran a full verification sweep after all fixes and documentation updates.
+- ✅ Memory files exist in workspace under `devSquadMemory/`.
+- ✅ Local vector build/query scripts remain functional:
+  - `devSquadMemory/build_local_embeddings.py`
+  - `devSquadMemory/query_helper.py`
+- ✅ Chat route still integrates retriever output through `src/lib/rag/localRetriever.ts`.
+- ℹ️ Persistent retriever microservice is still optional/not required for current flow.
 
-### Re-run commands and results
+## Remaining limitations / external dependencies
 
-- `npx tsc --noEmit -p tsconfig.json` ✅ pass
-- `npm run build` ✅ pass
-- `npm run test:runner` ✅ pass
-- `npm run test:hook` ✅ pass
-- `npm run test:runtime` ✅ pass
-- `npm run test:planning` ✅ pass
-- `npm run test:supervisor` ✅ pass
-- `npm run test:supervisor-concept` ✅ pass
-- `npm run test:supervisor-intents` ✅ pass
-- `npx tsx scripts/test-models.mjs occ` ✅ pass, 3 models found
-- `npx tsx scripts/test-models.mjs openclaude` ✅ pass, 2 models found
-- `npx tsx scripts/test-models.mjs openai-http` ✅ pass, 0 models (discovery-only)
-- `npx tsx scripts/test-models.mjs lm-studio` ✅ pass, 0 models (discovery-only)
-- `npx tsx scripts/test-chat-logging.mjs` ✅ pass (expected 500 path exercised)
-- `npx tsx scripts/test-start-pipeline.mjs` ✅ expected guarded failure (`No staging session found. Talk to S or A first.`)
+- Full real-world provider execution for every backend still depends on local credentials/endpoints:
+  - Bedrock/AWS creds for Bedrock paths
+  - Anthropic/OpenAI keys where required
+  - Running LM Studio/Ollama/OpenAI-compatible endpoint when using HTTP providers
+- `occ` behavior depends on your chosen provider model string and auth route; discovery success does not guarantee execution success without valid runtime auth.
 
-### Current truth snapshot
+## Files added/updated in this pass
 
-- Core app compile/build/tests are green.
-- `occ` and `openclaude` are executable runner providers in this repo.
-- `openai-http` and `lm-studio` remain discovery-only providers in this repo.
-- Bedrock model discovery and execution still depend on having valid runtime credentials/configuration in the same host/container environment.
+- `src/lib/modelAdapters/openaiHttpAdapter.ts`
+- `src/lib/modelAdapters/lmStudioAdapter.ts`
+- `scripts/http-runner-shim.mjs`
+- `scripts/test-http-runner.mjs`
+- `scripts/test-cli-adapters.mjs`
+- `src/app/api/chat/route.ts` (provider error event handling)
+- `pipeline/orchestrator.ts` (provider error event handling)

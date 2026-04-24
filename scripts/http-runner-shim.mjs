@@ -15,7 +15,7 @@ function emit(event) {
 }
 
 function normalizeBaseUrl(base) {
-  if (!base) return 'https://api.openai.com/v1'\;
+  if (!base) return 'https://api.openai.com/v1';
   const trimmed = base.replace(/\/+$/, '');
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }

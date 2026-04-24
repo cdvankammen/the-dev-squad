@@ -29,7 +29,7 @@ export async function GET() {
         installedOrConfigured,
         executable,
         note: !executable
-          ? 'Use openclaude/occ/claude-cli for executable tool sessions. Direct HTTP runner support is not implemented yet.'
+          ? 'Provider is discoverable but does not support executable runner sessions.'
           : undefined,
       };
     });
