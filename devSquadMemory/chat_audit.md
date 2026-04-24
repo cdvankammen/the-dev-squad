@@ -1,60 +1,39 @@
-# Dev Squad chat audit (latest)
+# Dev Squad chat/conversation audit (latest)
 
 Date: 2026-04-24
 
 ## Scope
 
-This audit re-checks the substantive implementation claims from the pasted Copilot conversation against the current repository state.
+Audited substantive claims from the pasted Copilot conversation against current code and executed tests.
 
-I audited meaningful claims (code paths, files, provider behavior, tests, RAG, Docker, UI state), not literal filler wording.
+## High-confidence validated claims
 
-## Verdict summary
+- Multi-provider adapter framework exists and is wired through runner/api.
+- Provider/model selection is propagated from UI -> API -> runner in manual mode.
+- Pipeline start stores selected provider/model and orchestrator reads them.
+- Chat API now returns JSON errors and logs unexpected failures.
+- Local RAG/vector artifacts and query scripts exist in `devSquadMemory/`.
 
-## Verified true
+## Corrected in this audit pass
 
-- `devSquadMemory/` exists in-workspace and contains research/docs/scripts/vector artifacts.
-- Local vector-memory artifacts exist and are queryable (`workspace_docs.jsonl`, `workspace_vectors.jsonl`, embed/query scripts).
-- Chat RAG injection is active (`src/app/api/chat/route.ts` + `src/lib/rag/localRetriever.ts`).
-- Provider/model APIs and UI controls exist in Office + Squad views.
-- Adapter routing exists for `claude-cli`, `occ`, `openclaude`, `openai-http`, `lm-studio`.
-- Server-side JSON error handling/logging is present for `/api/chat`.
-- Pipeline start persists selected provider/model into staging and orchestrator uses it.
+1. **Manual chat 500 fix**
+   - Issue: resumed sessions could omit both `roleFile` and `systemPrompt`.
+   - Fix: manual path now always sets `systemPrompt`.
 
-## Verified true after fixes in this pass
+2. **Provider model-list cross-leak reduction**
+   - UI provider change now resets to provider-scoped fallback before discovery.
+   - `openai-http` and `lm-studio` discovery no longer pull global configured model IDs.
 
-- `openai-http` and `lm-studio` are now executable providers (not discovery-only) via:
-  - `scripts/http-runner-shim.mjs`
-  - `src/lib/modelAdapters/openaiHttpAdapter.ts`
-  - `src/lib/modelAdapters/lmStudioAdapter.ts`
-- Provider `type:"error"` events are now surfaced (not silently ignored):
-  - `src/app/api/chat/route.ts`
-  - `pipeline/orchestrator.ts`
-- HTTP execution compatibility is validated using a local mock OpenAI-compatible server:
-  - `scripts/test-http-runner.mjs`
+3. **CCR provider support**
+   - Added `ccr` adapter and provider API visibility.
 
-## Verified partially true
+## Current runtime truth snapshot
 
-- Bedrock support: possible and wired through provider selection, **but requires runtime AWS/provider credentials/config** in the host/container environment.
-- Provider discovery: works, but may include configured model IDs even if backend connectivity/auth is not currently valid.
+- `openclaude`: good smoke-test execution in this env.
+- `openai-http`/`lm-studio`: executable via HTTP shim; validated with mock server.
+- `occ`: discovery works; execution stream characteristics still environment/profile dependent.
+- `ccr`: discovery works; manual provider smoke route calls return 200; detailed event shape remains wrapper/version dependent.
 
-## Still not implemented / still optional
+## Important caveat
 
-- Persistent retriever microservice (`RETRIEVER_URL`) remains optional/not required for current RAG path.
-- Full provider-specific model catalog fidelity depends on each upstream CLI/API behavior.
-
-## Execution snapshot from latest tests
-
-- `openclaude`: execution smoke test succeeded.
-- `occ`: discovery works; execution returned provider auth error in this environment for tested path.
-- `openai-http` + `lm-studio`: execution compatibility verified through local mock HTTP backend.
-
-## Practical conclusion
-
-Today’s repo is now coherent for:
-
-- CLI providers (`claude-cli`, `occ`, `openclaude`)
-- HTTP-compatible providers (`openai-http`, `lm-studio`) via shim
-- Manual + pipeline provider/model selection
-- In-workspace RAG/vector memory usage
-
-Final runtime success for cloud/backed providers still depends on your actual credentials/endpoints.
+Discovery output is not equal to successful inference. Real execution still depends on auth/config/runtime compatibility for each provider.

@@ -228,7 +228,24 @@ function streamClaude(
       if (!line.trim()) return;
       noteDiagnostic(line);
       let event: Record<string, unknown>;
-      try { event = JSON.parse(line); } catch { return; }
+      try { event = JSON.parse(line); } catch {
+        const plain = line.trim();
+        if (plain) {
+          try {
+            const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+            const phase = s.currentPhase || 'concept';
+            s.events.push({
+              time: new Date().toISOString(),
+              agent,
+              phase,
+              type: 'text',
+              text: plain,
+            });
+            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          } catch {}
+        }
+        return;
+      }
 
       const type = event.type as string;
 
@@ -418,7 +435,7 @@ async function handleManual(agent: string, message: string, model: string, model
       projectDir: MANUAL_DIR,
       model,
       resume: sessionId || undefined,
-      systemPrompt: sessionId ? undefined : (MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A),
+      systemPrompt: MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A,
       modelProvider,
     },
     eventsFile,

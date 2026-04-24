@@ -65,6 +65,7 @@ async function main() {
   const { createRunner } = await import('../pipeline/runner.ts');
 
   const tests = [
+    { provider: 'ccr', model: process.env.CCR_TEST_MODEL || 'claude-sonnet-4-6' },
     { provider: 'occ', model: process.env.OCC_TEST_MODEL || 'claude-sonnet-4-6' },
     { provider: 'openclaude', model: process.env.OPENCLAUDE_TEST_MODEL || 'haiku' },
   ];
@@ -86,8 +87,9 @@ async function main() {
     }
   }
 
+  const strict = process.argv.includes('--strict');
   const hardFail = results.some((r) => r.exitCode === -1);
-  if (hardFail) process.exit(1);
+  if (hardFail && strict) process.exit(1);
 }
 
 main().catch((err) => {

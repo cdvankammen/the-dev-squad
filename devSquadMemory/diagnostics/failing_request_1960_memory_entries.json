@@ -1,0 +1,22 @@
+[
+  {
+    "index": 13,
+    "type": "function",
+    "description_short": "Manage a persistent memory system with three scopes for storing notes and information across conversations.\n\nMemory is organized under /memories/ with three tiers:\n- `/memories/` \u2014 User memory: persistent notes that surv",
+    "raw_json": {
+      "type": "function",
+      "name": "memory",
+      "description": "Manage a persistent memory system with three scopes for storing notes and information across conversations.\n\nMemory is organized under /memories/ with three tiers:\n- `/memories/` \u2014 User memory: persistent notes that survive across all workspaces and conversations. Store preferences, patterns, and general insights here.\n- `/memories/session/` \u2014 Session memory: notes scoped to the current conversation. Store task-specific context and in-progress notes here. Cleared after the conversation ends.\n- `/memories/repo/` \u2014 Repository memory: repository-scoped facts stored via Copilot. Only the `create` command is supported for this path.\n\nIMPORTANT: Before creating new memory files, first view the /memories/ directory to understand what already exists. This helps avoid duplicates and maintain organized notes.\n\nCommands:\n- `view`: View contents of a file or list directory contents. Can be used on files or directories (e.g., \"/memories/\" to see all top-level items).\n- `create`: Create a new file at the specified path with the given content. Fails if the file already exists.\n- `str_replace`: Replace an exact string in a file with a new string. The old_str must appear exactly once in the file.\n- `insert`: Insert text at a specific line number in a file. Line 0 inserts at the beginning.\n- `delete`: Delete a file or directory (and all its contents).\n- `rename`: Rename or move a file or directory from path to new_path. Cannot rename across scopes."
+    }
+  },
+  {
+    "index": 189,
+    "type": "function",
+    "description_short": "Enables storing and retrieving information across conversations through a persistent memory file directory. This tool allows you to create, read, update, and delete files in the /memories directory that persist between s",
+    "raw_json": {
+      "type": "function",
+      "name": "memory",
+      "description": "Enables storing and retrieving information across conversations through a persistent memory file directory. This tool allows you to create, read, update, and delete files in the /memories directory that persist between sessions, allowing you to build knowledge over time without keeping everything in the context window. Use this tool to maintain project context across multiple executions, learn from past interactions and decisions, build knowledge bases over time, and enable cross-conversation learning where you can improve at recurring workflows. IMPORTANT: ALWAYS view your memory directory before doing anything else to check for earlier progress. As you make progress on tasks, record status, progress, and thoughts in your memory. Assume your context window might be reset at any moment, so you risk losing any progress that is not recorded in your memory directory. When editing your memory folder, always try to keep its content up-to-date, coherent and organized. You can rename or delete files that are no longer relevant. Do not create new files unless necessary. All operations are restricted to the /memories directory for security."
+    }
+  }
+]

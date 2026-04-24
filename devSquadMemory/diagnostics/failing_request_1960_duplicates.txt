@@ -1,0 +1,26 @@
+File: ~/Library/Application Support/Code - Insiders/User/workspaceStorage/6dcfa9e45f395142aae42fd92f5c2f3d/GitHub.copilot-chat/debug-logs/ab716068-760f-46aa-a29f-7de9e1f3b312/tools_5.json
+  Total tools: 92
+  Unique names: 92
+  Duplicate names count: 0
+  No duplicates found.
+
+File: ~/Library/Application Support/Code - Insiders/User/workspaceStorage/6dcfa9e45f395142aae42fd92f5c2f3d/GitHub.copilot-chat/debug-logs/5248774e-6eac-4f6d-a73d-97993d1840bb/tools_2.json
+  Total tools: 84
+  Unique names: 84
+  Duplicate names count: 0
+  No duplicates found.
+
+File: ~/Library/Application Support/Code - Insiders/User/workspaceStorage/6dcfa9e45f395142aae42fd92f5c2f3d/GitHub.copilot-chat/debug-logs/8af9efb3-e820-4429-a383-42d3f5415ffc/tools_6.json
+  Total tools: 199
+  Unique names: 198
+  Duplicate names count: 1
+  Duplicates found:
+    - memory: 2 occurrences
+
+File: ~/Library/Application Support/Code - Insiders/User/workspaceStorage/6dcfa9e45f395142aae42fd92f5c2f3d/GitHub.copilot-chat/debug-logs/416569b9-0073-4586-a153-0b2da1c52c3c/tools_0.json
+  Total tools: 199
+  Unique names: 198
+  Duplicate names count: 1
+  Duplicates found:
+    - memory: 2 occurrences
+

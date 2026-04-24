@@ -553,6 +553,12 @@ async function runClaudeTurn(
       try {
         event = JSON.parse(line);
       } catch {
+        const plain = line.trim();
+        if (plain) {
+          noteDiagnostic(`[provider-plain-text] ${plain}`);
+          emit(agent, state.currentPhase, 'assistant', plain);
+          flush();
+        }
         return;
       }
 

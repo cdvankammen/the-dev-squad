@@ -3,7 +3,6 @@ import { ChildProcessWithoutNullStreams } from 'child_process';
 import {
   AdapterSpawnOptions,
   captureCommandOutput,
-  collectConfiguredModelIds,
   extractLikelyModelIds,
   ModelAdapter,
   spawnLocal,
@@ -63,7 +62,6 @@ export default class LMStudioAdapter implements ModelAdapter {
 
     const discovered = output ? extractLikelyModelIds(output) : [];
     const configured = new Set<string>([
-      ...collectConfiguredModelIds(),
       ...splitModelEnv(process.env.LM_STUDIO_MODEL),
       ...splitModelEnv(process.env.OPENAI_MODEL),
     ]);

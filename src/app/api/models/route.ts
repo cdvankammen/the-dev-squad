@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import getModelAdapter from '@/lib/modelAdapters';
 
 const DEFAULT_MODELS: Record<string, string[]> = {
-  'claude-cli': ['claude-opus-4-6', 'claude-sonnet-4-6'],
-  'occ': ['claude-opus-4-6', 'claude-sonnet-4-6'],
-  'openclaude': [process.env.OPENAI_MODEL || 'gpt-4o', 'gpt-4o-mini-1'],
-  'openai-http': [process.env.OPENAI_MODEL || 'gpt-4o'],
-  'lm-studio': [process.env.OPENAI_MODEL || 'gpt-4o'],
+  'claude-cli': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  'ccr': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  'occ': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  'openclaude': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  'openai-http': [process.env.OPENAI_MODEL || 'gpt-4o-mini'],
+  'lm-studio': [process.env.LM_STUDIO_MODEL || process.env.OPENAI_MODEL || 'local-model'],
 };
 
 export async function GET(req: Request) {
@@ -40,8 +41,11 @@ export async function GET(req: Request) {
       // Discovery was not available or not used — try env-driven defaults
       // and then the built-in DEFAULT_MODELS fallback.
       const envModel = process.env.OPENAI_MODEL;
-      if (provider === 'openclaude' || provider === 'openai-http') {
-        if (envModel) models = [envModel];
+      const lmStudioModel = process.env.LM_STUDIO_MODEL;
+      if (provider === 'openai-http' && envModel) {
+        models = [envModel];
+      } else if (provider === 'lm-studio' && (lmStudioModel || envModel)) {
+        models = [lmStudioModel || envModel || 'local-model'];
       }
       if (!models || models.length === 0) {
         const fallback = DEFAULT_MODELS[provider] || DEFAULT_MODELS['claude-cli'] || [];

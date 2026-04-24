@@ -3,6 +3,7 @@ import OpenAIHttpAdapter from './openaiHttpAdapter';
 import OpenClaudeCodeAdapter from './openClaudeCodeAdapter';
 import OpenClaudeAdapter from './openClaudeAdapter';
 import LMStudioAdapter from './lmStudioAdapter';
+import ClaudeCodeRouterAdapter from './claudeCodeRouterAdapter';
 import type { ModelAdapter } from './ModelAdapter';
 
 /**
@@ -33,6 +34,11 @@ export function getModelAdapter(provider?: string): ModelAdapter | null {
 
   if (p === 'lm-studio' || p === 'lmstudio') {
     return new LMStudioAdapter();
+  }
+
+
+  if (p === 'ccr' || p === 'claude-code-router') {
+    return new ClaudeCodeRouterAdapter();
   }
 
   // Unknown provider

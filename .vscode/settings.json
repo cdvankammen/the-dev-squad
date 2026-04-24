@@ -1,4 +1,5 @@
 {
+    "github.copilot.chat.copilotMemory.enabled": false,
     "files.exclude": {
         "**/.git": true,
         "**/.svn": true,

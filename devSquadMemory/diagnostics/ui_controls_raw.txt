@@ -1,0 +1,105 @@
+src/app/squad/page.tsx:6:import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
+src/app/squad/page.tsx:295:                  <button
+src/app/squad/page.tsx:296:                    onClick={() => setMode('pipeline')}
+src/app/squad/page.tsx:302:                  <button
+src/app/squad/page.tsx:303:                    onClick={() => setMode('manual')}
+src/app/squad/page.tsx:317:                      <select
+src/app/squad/page.tsx:319:                        onChange={(e) => setSelectedProvider(e.target.value)}
+src/app/squad/page.tsx:331:                      <button
+src/app/squad/page.tsx:332:                        onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+src/app/squad/page.tsx:339:                        <input
+src/app/squad/page.tsx:342:                          onChange={(e) => {
+src/app/squad/page.tsx:367:                    <select
+src/app/squad/page.tsx:369:                      onChange={(e) => setSelectedModel(e.target.value)}
+src/app/squad/page.tsx:387:                      <button
+src/app/squad/page.tsx:388:                        onClick={() => setSelectedSecurityMode('fast')}
+src/app/squad/page.tsx:395:                      <button
+src/app/squad/page.tsx:396:                        onClick={() => setSelectedSecurityMode('strict')}
+src/app/squad/page.tsx:409:                      <button
+src/app/squad/page.tsx:410:                        onClick={() => setSelectedRunGoal('full-build')}
+src/app/squad/page.tsx:417:                      <button
+src/app/squad/page.tsx:418:                        onClick={() => setSelectedRunGoal('plan-only')}
+src/app/squad/page.tsx:431:                      <button
+src/app/squad/page.tsx:432:                        onClick={() => setSelectedRunFinalAudit(false)}
+src/app/squad/page.tsx:439:                      <button
+src/app/squad/page.tsx:440:                        onClick={() => setSelectedRunFinalAudit(true)}
+src/app/squad/page.tsx:461:                    <button
+src/app/squad/page.tsx:463:                      onClick={() => setSelectedAgent(agent)}
+src/app/squad/page.tsx:606:                <AutoGrowTextarea
+src/app/squad/page.tsx:608:                  onChange={(e) => setChatInput(e.target.value)}
+src/app/squad/page.tsx:623:                <button
+src/app/squad/page.tsx:624:                  onClick={() => void handleSend()}
+src/app/squad/page.tsx:641:                <button
+src/app/squad/page.tsx:643:                  onClick={() => setRightTab(value as 'next' | 'activity' | 'controls')}
+src/app/squad/page.tsx:722:                        <button onClick={() => void approveBash(true, visiblePendingApproval)} className="flex-1 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-black">
+src/app/squad/page.tsx:725:                        <button onClick={() => void approveBash(false, visiblePendingApproval)} className="flex-1 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white">
+src/app/squad/page.tsx:737:                          <button onClick={() => void handleStart()} className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400">
+src/app/squad/page.tsx:742:                          <button
+src/app/squad/page.tsx:743:                            onClick={() => { void setStopAfterReview(!stopAfterReviewArmed); }}
+src/app/squad/page.tsx:750:                          <button onClick={() => void resumePipeline()} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500">
+src/app/squad/page.tsx:754:                        <button onClick={() => void stopPipeline()} className="w-full rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-400">
+src/app/squad/page.tsx:757:                        <button onClick={() => void handleReset()} className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
+src/app/page.tsx:6:import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
+src/app/page.tsx:511:                <button
+src/app/page.tsx:512:                  onClick={() => setMode('pipeline')}
+src/app/page.tsx:516:                <button
+src/app/page.tsx:517:                  onClick={() => setMode('manual')}
+src/app/page.tsx:526:                    <select
+src/app/page.tsx:528:                      onChange={(e) => setSelectedProvider(e.target.value)}
+src/app/page.tsx:540:                    <button
+src/app/page.tsx:541:                      onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+src/app/page.tsx:548:                      <input
+src/app/page.tsx:551:                        onChange={(e) => {
+src/app/page.tsx:576:                  <select
+src/app/page.tsx:578:                    onChange={(e) => setSelectedModel(e.target.value)}
+src/app/page.tsx:596:                    <button
+src/app/page.tsx:597:                      onClick={() => setSelectedSecurityMode('fast')}
+src/app/page.tsx:602:                    <button
+src/app/page.tsx:603:                      onClick={() => setSelectedSecurityMode('strict')}
+src/app/page.tsx:622:                    <button
+src/app/page.tsx:623:                      onClick={() => setSelectedPermissionMode('auto')}
+src/app/page.tsx:628:                    <button
+src/app/page.tsx:629:                      onClick={() => setSelectedPermissionMode('plan')}
+src/app/page.tsx:633:                    <button
+src/app/page.tsx:634:                      onClick={() => setSelectedPermissionMode('dangerously-skip-permissions')}
+src/app/page.tsx:655:                    <button
+src/app/page.tsx:656:                      onClick={() => setSelectedRunGoal('full-build')}
+src/app/page.tsx:661:                    <button
+src/app/page.tsx:662:                      onClick={() => setSelectedRunGoal('plan-only')}
+src/app/page.tsx:681:                    <button
+src/app/page.tsx:682:                      onClick={() => setSelectedRunFinalAudit(false)}
+src/app/page.tsx:687:                    <button
+src/app/page.tsx:688:                      onClick={() => setSelectedRunFinalAudit(true)}
+src/app/page.tsx:909:              <button onClick={handleStartPipeline} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-emerald-400">
+src/app/page.tsx:914:              <button
+src/app/page.tsx:915:                onClick={() => { void setStopAfterReview(!stopAfterReviewArmed); }}
+src/app/page.tsx:922:              <button onClick={handleResumePipeline} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500">
+src/app/page.tsx:927:              <button onClick={handleResumePipeline} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-amber-400">
+src/app/page.tsx:931:            <button onClick={() => { setPipelineStarted(false); completionNotifiedRef.current = false; stopPipeline(); setSendingAgents(new Set()); }} className="rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-400">
+src/app/page.tsx:935:              <button onClick={handleViewPlan} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10">
+src/app/page.tsx:939:            <button onClick={handleReset} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-400 transition hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20">
+src/app/page.tsx:959:          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18]" style={{ gridRow: '1 / -1' }} onClick={() => setSelectedAgent('S')}>
+src/app/page.tsx:971:              <button onClick={handleViewPlan} className="ml-auto rounded border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-white hover:bg-white/10">
+src/app/page.tsx:1015:          <div className="flex-shrink-0 border-t border-[#1a1a2a] px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+src/app/page.tsx:1020:              <AutoGrowTextarea
+src/app/page.tsx:1022:                onChange={(e) => setChatInput(e.target.value)}
+src/app/page.tsx:1037:              <button onClick={handleSend} disabled={sendingAgents.has('S') || !chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
+src/app/page.tsx:1062:              onClick={() => { setSelectedAgent(id); setExpandedAgent(id); }}
+src/app/page.tsx:1084:                    <select
+src/app/page.tsx:1085:                      onClick={(e) => e.stopPropagation()}
+src/app/page.tsx:1086:                      onChange={(e) => { if (e.target.value) { handleHandoff(id, e.target.value as AgentId); e.target.value = ''; } }}
+src/app/page.tsx:1132:              <div className="flex-shrink-0 border-t border-[#1a1a2a] px-2.5 py-2" onClick={(e) => e.stopPropagation()}>
+src/app/page.tsx:1134:                  <AutoGrowTextarea
+src/app/page.tsx:1136:                    onChange={(e) => setPanelInputs(prev => ({ ...prev, [id]: e.target.value }))}
+src/app/page.tsx:1147:                  <button onClick={() => handlePanelSend(id)} disabled={isSending || !panelInputs[id]?.trim()} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-30">
+src/app/page.tsx:1188:        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setExpandedAgent(null)}>
+src/app/page.tsx:1189:          <div className="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e16]" onClick={(e) => e.stopPropagation()}>
+src/app/page.tsx:1200:              <button onClick={() => setExpandedAgent(null)} className="text-2xl text-slate-500 hover:text-white">&times;</button>
+src/app/page.tsx:1223:                <AutoGrowTextarea
+src/app/page.tsx:1225:                  onChange={(e) => setChatInput(e.target.value)}
+src/app/page.tsx:1236:                <button onClick={handleExpandedSend} disabled={sendingAgents.has(expandedAgent) || !chatInput.trim()} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-30">
+src/app/page.tsx:1247:        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setShowPlan(false)}>
+src/app/page.tsx:1248:          <div className="max-h-[80vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/10 bg-[#0e0e16] p-6" onClick={(e) => e.stopPropagation()}>
+src/app/page.tsx:1251:              <button onClick={() => setShowPlan(false)} className="text-2xl text-slate-500 hover:text-white">&times;</button>
+src/app/page.tsx:1271:            <button onClick={() => approveBash(true, pendingApproval)} className="rounded-lg bg-emerald-500 px-5 py-2 text-sm font-bold text-black hover:bg-emerald-400">APPROVE</button>
+src/app/page.tsx:1272:            <button onClick={() => approveBash(false, pendingApproval)} className="rounded-lg bg-red-500 px-5 py-2 text-sm font-bold text-white hover:bg-red-400">DENY</button>

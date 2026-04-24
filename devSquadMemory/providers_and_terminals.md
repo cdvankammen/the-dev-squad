@@ -1,114 +1,92 @@
-# Providers, terminals, Docker, and local model routing
+# Providers, terminals, and concurrency behavior
 
 Date: 2026-04-24
 
-## How Dev Squad actually runs agents (important)
+## How Dev Squad runs “5 agents”
 
-Dev Squad does **not** create five macOS Terminal.app windows by default.
+Dev Squad does not require 5 separate macOS Terminal windows.
 
-It creates child processes via Node (`runner.spawn(...)`):
+It runs multiple child processes from Node:
 
-- In host mode: each agent turn is a child process on your machine.
-- In docker mode: each agent turn is a process inside a container.
+- Manual/API flows: process per run via `createRunner('host').spawn(...)`
+- Pipeline flows: orchestrator spawns per-phase/per-agent runs
+- Docker mode: same idea, but process runs inside container
 
-So “5 terminals” means up to ~5 concurrent **agent processes/sessions**, not necessarily five visible terminal windows.
+So the “5 at once” behavior is concurrent process/session orchestration, not necessarily 5 visible terminals.
 
-## Where this happens in code
+## Where provider/model selection actually happens
 
-- Runner selection/spawn: `pipeline/runner.ts`
-- Pipeline orchestration: `pipeline/orchestrator.ts`
-- Chat/manual execution path: `src/app/api/chat/route.ts`
-- Pipeline start wiring: `src/app/api/start-pipeline/route.ts` → `src/lib/pipeline-control.ts`
+### Manual mode
 
-## Supported providers (current)
+1. UI dropdowns set `selectedProvider` and `selectedModel`
+2. `usePipelineState.sendChat` sends both in POST `/api/chat`
+3. `/api/chat` passes `modelProvider` and `model` to `streamClaude`
+4. `runner.ts` resolves adapter from provider and spawns matching CLI/shim
 
-Configured by `modelProvider` (manual chat + pipeline start).
+### Pipeline mode
+
+1. UI start action sends provider/model in POST `/api/start-pipeline`
+2. `pipeline-control` stores them in staging state
+3. `pipeline/orchestrator.ts` reads `state.selectedProvider` / `state.selectedModel`
+4. Runner uses those values for all subsequent agent spawns
+
+## Current provider options
 
 - `claude-cli`
-- `occ` / `open-claude-code`
+- `ccr` (Claude Code Router)
+- `occ` (Open Claude Code)
 - `openclaude`
 - `openai-http`
 - `lm-studio`
 
-Provider mapping lives in: `src/lib/modelAdapters/index.ts`
+## Provider execution reality (current env snapshot)
 
-## Current execution behavior by provider
+- `claude-cli`: available on host
+- `ccr`: available on host; discovery works; manual provider smoke calls succeed (200). Output format can still vary by ccr profile/version.
+- `occ`: available on host; discovery works; assistant stream may be sparse/non-standard depending env/profile
+- `openclaude`: available and executed successfully in smoke tests
+- `openai-http`: executable via HTTP shim
+- `lm-studio`: executable via HTTP shim
 
-### claude-cli
-- Direct CLI execution path (Claude Code CLI).
 
-### occ (open-claude-code)
-- Adapter executes `occ` binary if present, otherwise `npx @ruvnet/open-claude-code`.
-- Discovery works in this environment.
-- Runtime success depends on provider auth/config (Bedrock/Anthropic/etc.).
+## Host-installed tool snapshot (this machine)
 
-### openclaude
-- Adapter executes `openclaude` binary if present, otherwise `npx @gitlawb/openclaude`.
-- Discovery and execution smoke-tested successfully in this environment.
-
-### openai-http
-- Now executable via `scripts/http-runner-shim.mjs`.
-- Uses OpenAI-compatible `/v1/chat/completions`.
-- Can point to OpenAI, OpenRouter-like, local gateways, etc.
-
-### lm-studio
-- Now executable via same HTTP shim.
-- Uses `LM_STUDIO_BASE_URL` (or `OPENAI_BASE_URL`) and OpenAI-compatible API shape.
-
-## Bedrock note (your specific setup)
-
-Yes, Bedrock can work, but discovery/execution require the environment where Dev Squad runs to have working Bedrock credentials/config.
-
-Typical requirements:
-
-- AWS creds/profile available to the runtime (host process or container)
-- Provider/model string valid for the adapter path you are using
-- Network access and IAM permissions for Bedrock model listing/inference
-
-If these are missing, discovery may still show configured model IDs (from settings/env), but execution will fail at runtime.
-
-## Docker behavior
-
-Docker mode uses configurable image/command in runner:
-
-- `PIPELINE_DOCKER_AGENT_IMAGE`
-- `PIPELINE_DOCKER_AGENT_CMD`
-
-Image variant with `occ` + `openclaude` is available:
-
-- `pipeline/Dockerfile.agent.occ`
-
-Credential/mount setup guidance is documented in:
-
-- `docs/docker-credentials.md`
-
-## Should you use OpenClaude as router or direct endpoints?
-
-You have three viable paths:
-
-1. **OpenClaude router** (`modelProvider=openclaude`)
-   - Best when you want provider/profile routing managed by OpenClaude.
-
-2. **Direct OpenAI-compatible endpoint** (`modelProvider=openai-http`)
-   - Best for OpenAI/OpenRouter/compatible hosted endpoints.
-
-3. **LM Studio direct** (`modelProvider=lm-studio`)
-   - Best for local/offline model serving with OpenAI-compatible API.
-
-All three are now wired in this repo.
-
-## Quick verification commands
+Command checks run:
 
 ```bash
-# Discovery checks
-npx tsx scripts/test-models.mjs occ
-npx tsx scripts/test-models.mjs openclaude
-npx tsx scripts/test-models.mjs openai-http
-npx tsx scripts/test-models.mjs lm-studio
-
-# HTTP-provider execution compatibility (mock server)
-npx tsx scripts/test-http-runner.mjs
-
-# CLI provider execution snapshot
-npx tsx scripts/test-cli-adapters.mjs
+which claude
+which ccr
+which occ
+which openclaude
+which ollama
+which lmstudio
 ```
+
+Observed paths in this environment:
+
+- `claude` -> `/Users/stillbulldog35/.local/bin/claude`
+- `ccr` -> `/opt/homebrew/bin/ccr`
+- `occ` -> `/opt/homebrew/bin/occ`
+- `openclaude` -> `/opt/homebrew/bin/openclaude`
+- `ollama` -> `/usr/local/bin/ollama`
+- `lmstudio` -> not found on PATH (HTTP endpoint mode still possible)
+
+## Can LM Studio work without a CLI wrapper?
+
+Yes.
+
+`lm-studio` provider is implemented through an OpenAI-compatible HTTP shim, so it does **not** require a Claude-compatible CLI binary to execute.
+
+## Can Claude Code Router be used as provider?
+
+Yes, now wired as `ccr` provider.
+
+Notes:
+- It is wrapper-driven, so CLI behavior depends on your ccr version and how it forwards arguments/output.
+- Discovery and execution are treated separately; discovery can work even if execution stream format needs adjustment.
+
+## Bedrock answer
+
+Yes, Bedrock-backed model identifiers can be used with CLI wrappers if runtime AWS/provider auth is valid in the environment that executes the process (host or container).
+
+Without valid credentials/profile, discovery can still show configured IDs while execution fails.

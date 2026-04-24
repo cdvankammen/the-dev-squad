@@ -3,7 +3,6 @@ import { ChildProcessWithoutNullStreams } from 'child_process';
 import {
   AdapterSpawnOptions,
   captureCommandOutput,
-  collectConfiguredModelIds,
   extractLikelyModelIds,
   ModelAdapter,
   spawnLocal,
@@ -63,10 +62,7 @@ export default class OpenAIHttpAdapter implements ModelAdapter {
 
     const output = await captureCommandOutput('curl', args);
     const discovered = output ? extractLikelyModelIds(output) : [];
-    const configured = new Set<string>([
-      ...collectConfiguredModelIds(),
-      ...splitModelEnv(process.env.OPENAI_MODEL),
-    ]);
+    const configured = new Set<string>(splitModelEnv(process.env.OPENAI_MODEL));
 
     return Array.from(new Set([...discovered, ...configured])).sort();
   }

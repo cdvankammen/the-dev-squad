@@ -1,0 +1,13 @@
+Copilot duplicate-tools diagnostic bundle
+Date: 2026-04-24 20:37:47Z
+
+Copilot Request id: fae91038-b6be-4efe-a28b-d32d6e81babc
+GH Request Id: F25A:18DC54:4EE08C4:57B7AD5:69EBC947
+
+Summary of detected duplicates and scan output:
+
+Found 347 unique tool-like names; 317 duplicates.
+
+(Original full report saved in /memories/devSqauCodeMemory/diagnostics/report.txt)
+
+See devSquadMemory/diagnostics/merged_summary.txt and merged_tools_deduped.json for the deduped merged payload.

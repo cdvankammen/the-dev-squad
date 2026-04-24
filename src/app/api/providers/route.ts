@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import getModelAdapter from '@/lib/modelAdapters';
 
 const KNOWN_PROVIDERS = [
+  { id: 'claude-cli', label: 'Claude Code CLI' },
+  { id: 'ccr', label: 'Claude Code Router (ccr)' },
   { id: 'occ', label: 'Open Claude Code (occ)' },
   { id: 'openclaude', label: 'OpenClaude' },
-  { id: 'claude-cli', label: 'Claude Code CLI' },
   { id: 'lm-studio', label: 'LM Studio / OpenAI-compatible' },
   { id: 'openai-http', label: 'OpenAI (HTTP)' },
 ];

@@ -36,10 +36,19 @@ const PHASE_PROGRESS: Record<string, number> = {
   deploy: 95, complete: 100,
 };
 
-const INITIAL_MODEL_OPTIONS = [
-  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-];
+const PROVIDER_FALLBACK_MODELS: Record<string, string[]> = {
+  'claude-cli': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  occ: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  openclaude: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  ccr: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  'openai-http': ['gpt-4o-mini', 'gpt-4.1-mini'],
+  'lm-studio': [],
+};
+
+const INITIAL_MODEL_OPTIONS = (PROVIDER_FALLBACK_MODELS['claude-cli'] || []).map((m) => ({
+  value: m,
+  label: m,
+}));
 
 const MANUAL_ROLES: Record<string, string> = {
   A: 'Software planning & architecture',
@@ -89,123 +98,71 @@ export default function PipelinePage() {
     } catch {}
   }, []);
 
-  useEffect(() => {
-    if (!selectedProvider) return;
-    (async () => {
-      try {
-        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const list = Array.isArray(data?.models) ? data.models : [];
-        const usedDiscovery = Boolean(data?.usedDiscovery);
-        const fallbackUsed = Boolean(data?.fallbackUsed);
+  const toModelOptions = (models: string[]) => models.map((m) => ({ value: m, label: m }));
 
-        setDiscoveryInfo((prev) => ({ ...prev, [selectedProvider]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+  const fallbackOptionsForProvider = (providerId: string) => {
+    const fallback = PROVIDER_FALLBACK_MODELS[providerId] || [];
+    return fallback.length > 0 ? toModelOptions(fallback) : [{ value: '', label: 'No models available' }];
+  };
 
-        setModelOptions((prevOptions) => {
-          // If discovery returned models, prefer them.
-          if (list.length > 0) {
-            const opts = list.map((m: string) => ({ value: m, label: m }));
-            if (!list.includes(selectedModel)) setSelectedModel(list[0]);
-            return opts;
-          }
-
-          // Discovery ran but found nothing: behavior depends on the
-          // `discoveredOnly` preference. If strict, show an explicit "no
-          // models discovered" state. Otherwise fall back to preserving
-          // existing options or showing a placeholder when none exist.
-          if (usedDiscovery && list.length === 0) {
-            if (discoveredOnly) {
-              setSelectedModel('');
-              return [{ value: '', label: 'No models discovered' }];
-            }
-            const hasExisting = Array.isArray(prevOptions) && prevOptions.some((o) => !!o.value);
-            if (hasExisting) {
-              // Ensure selectedModel remains valid; otherwise pick first available.
-              if (!prevOptions.some((o) => o.value === selectedModel)) {
-                const first = prevOptions.find((o) => !!o.value);
-                if (first) setSelectedModel(first.value);
-                else setSelectedModel('');
-              }
-              return prevOptions;
-            }
-
-            setSelectedModel('');
-            return [{ value: '', label: 'No models available' }];
-          }
-
-          // If discovery didn't run and fallback was used, populate with
-          // the fallback models the API returned (if any).
-          if (fallbackUsed && list.length === 0) {
-            const fallback = Array.isArray(data?.models) ? data.models : [];
-            if (fallback.length > 0) {
-              const opts: Array<{ value: string; label: string }> = fallback.map((m: string) => ({ value: m, label: m }));
-              if (!opts.some((o) => o.value === selectedModel)) setSelectedModel(opts[0].value);
-              return opts;
-            }
-          }
-
-          // Otherwise leave existing options in place.
-          return prevOptions;
-        });
-      } catch {
-        // On error, keep existing options.
-      }
-    })();
-  }, [selectedProvider]);
-
-  async function fetchModelsForProvider(p: string) {
+  async function fetchModelsForProvider(providerId: string) {
     try {
-      const res = await fetch(`/api/models?provider=${encodeURIComponent(p)}`);
-      if (!res.ok) return;
+      const res = await fetch(`/api/models?provider=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+      if (!res.ok) {
+        const fallbackOptions = fallbackOptionsForProvider(providerId);
+        setModelOptions(fallbackOptions);
+        const first = fallbackOptions.find((o) => !!o.value);
+        setSelectedModel(first?.value || '');
+        return;
+      }
+
       const data = await res.json();
-      const list = Array.isArray(data?.models) ? data.models : [];
+      const list = Array.isArray(data?.models)
+        ? data.models.filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0)
+        : [];
       const usedDiscovery = Boolean(data?.usedDiscovery);
       const fallbackUsed = Boolean(data?.fallbackUsed);
 
-      setDiscoveryInfo((prev) => ({ ...prev, [p]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+      setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
 
-      setModelOptions((prevOptions) => {
-        if (list.length > 0) {
-          const opts = list.map((m: string) => ({ value: m, label: m }));
-          if (!list.includes(selectedModel)) setSelectedModel(list[0]);
-          return opts;
-        }
+      if (list.length > 0) {
+        const opts = toModelOptions(list);
+        setModelOptions(opts);
+        if (!list.includes(selectedModel)) setSelectedModel(list[0]);
+        return;
+      }
 
-        if (usedDiscovery && list.length === 0) {
-          if (discoveredOnly) {
-            setSelectedModel('');
-            return [{ value: '', label: 'No models discovered' }];
-          }
-          const hasExisting = Array.isArray(prevOptions) && prevOptions.some((o) => !!o.value);
-          if (hasExisting) {
-            if (!prevOptions.some((o) => o.value === selectedModel)) {
-              const first = prevOptions.find((o) => !!o.value);
-              if (first) setSelectedModel(first.value);
-              else setSelectedModel('');
-            }
-            return prevOptions;
-          }
+      if (usedDiscovery && !fallbackUsed && discoveredOnly) {
+        setModelOptions([{ value: '', label: 'No models discovered' }]);
+        setSelectedModel('');
+        return;
+      }
 
-          setSelectedModel('');
-          return [{ value: '', label: 'No models available' }];
-        }
-
-        if (fallbackUsed && list.length === 0) {
-          const fallback = Array.isArray(data?.models) ? data.models : [];
-          if (fallback.length > 0) {
-            const opts: Array<{ value: string; label: string }> = fallback.map((m: string) => ({ value: m, label: m }));
-            if (!opts.some((o) => o.value === selectedModel)) setSelectedModel(opts[0].value);
-            return opts;
-          }
-        }
-
-        return prevOptions;
-      });
+      const fallbackOptions = fallbackOptionsForProvider(providerId);
+      setModelOptions(fallbackOptions);
+      const first = fallbackOptions.find((o) => !!o.value);
+      setSelectedModel(first?.value || '');
     } catch {
-      // ignore
+      const fallbackOptions = fallbackOptionsForProvider(providerId);
+      setModelOptions(fallbackOptions);
+      const first = fallbackOptions.find((o) => !!o.value);
+      setSelectedModel(first?.value || '');
     }
   }
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+
+    const fallbackOptions = fallbackOptionsForProvider(selectedProvider);
+    setModelOptions(fallbackOptions);
+    const first = fallbackOptions.find((o) => !!o.value);
+    if (first?.value && first.value !== selectedModel) {
+      setSelectedModel(first.value);
+    }
+
+    void fetchModelsForProvider(selectedProvider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProvider, discoveredOnly]);
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -564,8 +521,8 @@ export default function PipelinePage() {
               </div>
               {/* Model Picker — manual mode only */}
               {!isPipeline && (
-                <div className="flex gap-2">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={selectedProvider}
                       onChange={(e) => setSelectedProvider(e.target.value)}
@@ -580,36 +537,40 @@ export default function PipelinePage() {
                       )}
                     </select>
 
-                    <div className="text-[11px] text-slate-400">Models: <span className="font-mono">{availableModelCount}</span>
-                      {selectedProvider && discoveryInfo[selectedProvider] && (
-                        discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                        ? <span className="ml-2 text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — using fallback)'}</span>
-                        : discoveryInfo[selectedProvider].usedDiscovery
-                          ? <span className="ml-2 text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
-                          : discoveryInfo[selectedProvider].fallbackUsed
-                            ? <span className="ml-2 text-xs text-slate-400">(fallback)</span>
-                            : null
-                      )}
-                      <button
-                        onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
-                        className="ml-2 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10"
-                      >
-                        Refresh
-                      </button>
-                      <label className="ml-3 inline-flex items-center gap-2 text-[11px] text-slate-400">
-                        <input
-                          type="checkbox"
-                          checked={discoveredOnly}
-                          onChange={(e) => {
-                            const v = e.target.checked;
-                            setDiscoveredOnly(v);
-                            try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
-                          }}
-                          className="h-4 w-4"
-                        />
-                        <span className="text-xs">Discovered-only</span>
-                      </label>
-                    </div>
+                    <button
+                      onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+                      className="rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10"
+                    >
+                      Refresh
+                    </button>
+
+                    <label className="inline-flex items-center gap-2 text-[11px] text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={discoveredOnly}
+                        onChange={(e) => {
+                          const v = e.target.checked;
+                          setDiscoveredOnly(v);
+                          try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
+                          if (selectedProvider) void fetchModelsForProvider(selectedProvider);
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-xs">Discovered-only</span>
+                    </label>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400">
+                    Models: <span className="font-mono">{availableModelCount}</span>
+                    {selectedProvider && discoveryInfo[selectedProvider] && (
+                      discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                      ? <span className="ml-2 text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                      : discoveryInfo[selectedProvider].usedDiscovery
+                        ? <span className="ml-2 text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                        : discoveryInfo[selectedProvider].fallbackUsed
+                          ? <span className="ml-2 text-xs text-slate-400">(provider fallback)</span>
+                          : null
+                    )}
                   </div>
 
                   <select
