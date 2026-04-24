@@ -81,8 +81,8 @@ dependencies:
     - embedding-generator-mcp
     - document-parser-mcp
   tools:
-    - similarity-search-tool
-    - embedding-tool
+    - skill.rag-implementer.similarity-search
+    - skill.rag-implementer.embedding
   skills:
     - knowledge-base-manager
     - performance-optimizer
