@@ -126,3 +126,11 @@
   "route": "api/chat"
 }
 
+[2026-04-25T06:04:47.152Z] Error: simulated request.json() failure for testing
+    at Object.json (/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/test-chat-logging.mjs:13:28)
+    at Object.POST (/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:732:28)
+    at <anonymous> (/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/test-chat-logging.mjs:17:29)
+{
+  "route": "api/chat"
+}
+
