@@ -86,6 +86,17 @@ export default function SquadPage() {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
 
+  // Endpoint config for HTTP-based providers
+  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
+  const [endpointHost, setEndpointHost] = useState('localhost');
+  const [endpointPort, setEndpointPort] = useState<number>(11434);
+  const [endpointApiKey, setEndpointApiKey] = useState('');
+  const [endpointSaving, setEndpointSaving] = useState(false);
+  const [endpointSaveMsg, setEndpointSaveMsg] = useState('');
+  const DEFAULT_PORTS: Record<string, number> = {
+    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080,
+  };
+
   const {
     state,
     sendChat,
@@ -125,8 +136,46 @@ export default function SquadPage() {
     return fallback.length > 0 ? toModelOptions(fallback) : [{ value: '', label: 'No models available' }];
   };
 
-  async function fetchModelsForProvider(providerId: string) {
+  async function loadEndpointConfig(providerId: string) {
+    if (!CONFIGURABLE_PROVIDERS.includes(providerId)) return;
     try {
+      const res = await fetch(`/api/provider-config?id=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const cfg = data?.config;
+      if (cfg) {
+        setEndpointHost(cfg.host ?? 'localhost');
+        setEndpointPort(cfg.port ?? DEFAULT_PORTS[providerId] ?? 8080);
+        setEndpointApiKey(cfg.apiKey ?? '');
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveEndpointConfig(providerId: string) {
+    if (!CONFIGURABLE_PROVIDERS.includes(providerId)) return;
+    setEndpointSaving(true);
+    setEndpointSaveMsg('');
+    try {
+      const res = await fetch('/api/provider-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: providerId, host: endpointHost, port: endpointPort, apiKey: endpointApiKey }),
+      });
+      if (res.ok) {
+        setEndpointSaveMsg('Saved ✓');
+        void fetchModelsForProvider(providerId);
+      } else {
+        setEndpointSaveMsg('Save failed');
+      }
+    } catch {
+      setEndpointSaveMsg('Save failed');
+    } finally {
+      setEndpointSaving(false);
+      setTimeout(() => setEndpointSaveMsg(''), 3000);
+    }
+  }
+
+  async function fetchModelsForProvider(providerId: string) {    try {
       const res = await fetch(`/api/models?provider=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
       if (!res.ok) {
         const fallbackOptions = fallbackOptionsForProvider(providerId);
@@ -180,6 +229,7 @@ export default function SquadPage() {
       setSelectedModel(first.value);
     }
 
+    void loadEndpointConfig(selectedProvider);
     void fetchModelsForProvider(selectedProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProvider, discoveredOnly]);
@@ -309,75 +359,143 @@ export default function SquadPage() {
                 </div>
               </div>
 
-              {!isPipeline && (
-                <div>
-                  <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Model</div>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={selectedProvider}
-                        onChange={(e) => setSelectedProvider(e.target.value)}
-                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
-                      >
-                        {availableProviders.length === 0 ? (
-                          <option value="claude-cli">Claude</option>
-                        ) : (
-                          availableProviders.map((p) => (
-                            <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
-                          ))
-                        )}
-                      </select>
-
-                      <button
-                        onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
-                        className="rounded px-2 py-1 text-xs font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10"
-                      >
-                        Refresh
-                      </button>
-
-                      <label className="inline-flex items-center gap-2 text-[11px] text-slate-400">
-                        <input
-                          type="checkbox"
-                          checked={discoveredOnly}
-                          onChange={(e) => {
-                            const v = e.target.checked;
-                            setDiscoveredOnly(v);
-                            try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
-                            if (selectedProvider) void fetchModelsForProvider(selectedProvider);
-                          }}
-                          className="h-4 w-4"
-                        />
-                        <span className="text-xs">Discovered-only</span>
-                      </label>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400">
-                      Models: <span className="font-mono">{availableModelCount}</span>
-                      {selectedProvider && discoveryInfo[selectedProvider] && (
-                        discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                          ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
-                          : discoveryInfo[selectedProvider].usedDiscovery
-                            ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
-                            : discoveryInfo[selectedProvider].fallbackUsed
-                              ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
-                              : null
-                      )}
-                    </div>
-
-                    <select
-                      value={selectedModel}
-                      onChange={(e) => setSelectedModel(e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                    >
-                      {modelOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value} className="bg-[#121522]" disabled={opt.value === ''}>
-                            {opt.label}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+              {/* Provider & Model — visible in both pipeline and manual modes */}
+              <div>
+                <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+                  {isPipeline ? 'Provider & Model' : 'Model'}
                 </div>
-              )}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value)}
+                      disabled={isPipeline && securityModeLocked}
+                      className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none${isPipeline && securityModeLocked ? ' cursor-not-allowed opacity-50' : ''}`}
+                    >
+                      {availableProviders.length === 0 ? (
+                        <option value="claude-cli">Claude</option>
+                      ) : (
+                        availableProviders.map((p) => (
+                          <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                        ))
+                      )}
+                    </select>
+
+                    <button
+                      onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+                      disabled={isPipeline && securityModeLocked}
+                      className="rounded px-2 py-1 text-xs font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Refresh
+                    </button>
+
+                    <label className="inline-flex items-center gap-2 text-[11px] text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={discoveredOnly}
+                        disabled={isPipeline && securityModeLocked}
+                        onChange={(e) => {
+                          const v = e.target.checked;
+                          setDiscoveredOnly(v);
+                          try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
+                          if (selectedProvider) void fetchModelsForProvider(selectedProvider);
+                        }}
+                        className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <span className="text-xs">Discovered-only</span>
+                    </label>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400">
+                    Models: <span className="font-mono">{availableModelCount}</span>
+                    {selectedProvider && discoveryInfo[selectedProvider] && (
+                      discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                        ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                        : discoveryInfo[selectedProvider].usedDiscovery
+                          ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                          : discoveryInfo[selectedProvider].fallbackUsed
+                            ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
+                            : null
+                    )}
+                  </div>
+
+                  {/* Endpoint Config panel */}
+                  {selectedProvider && CONFIGURABLE_PROVIDERS.includes(selectedProvider) && (
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-2 space-y-2">
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Endpoint Config</div>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[9px] text-slate-500 uppercase tracking-wider">Host</label>
+                          <input
+                            type="text"
+                            title="Endpoint host"
+                            value={endpointHost}
+                            onChange={(e) => setEndpointHost(e.target.value)}
+                            placeholder="localhost"
+                            disabled={isPipeline && securityModeLocked}
+                            className="w-32 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[9px] text-slate-500 uppercase tracking-wider">Port</label>
+                          <input
+                            type="number"
+                            title="Endpoint port"
+                            value={endpointPort}
+                            onChange={(e) => setEndpointPort(Number(e.target.value))}
+                            min={1}
+                            max={65535}
+                            disabled={isPipeline && securityModeLocked}
+                            className="w-16 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+                        {(selectedProvider === 'openwebui' || selectedProvider === 'openai-compat' || selectedProvider === 'openai-http') && (
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[9px] text-slate-500 uppercase tracking-wider">API Key</label>
+                            <input
+                              type="password"
+                              title="API Key"
+                              value={endpointApiKey}
+                              onChange={(e) => setEndpointApiKey(e.target.value)}
+                              placeholder="(optional)"
+                              disabled={isPipeline && securityModeLocked}
+                              className="w-28 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => selectedProvider && void saveEndpointConfig(selectedProvider)}
+                          disabled={endpointSaving || (isPipeline && securityModeLocked)}
+                          className="rounded px-2 py-1 text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {endpointSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        {endpointSaveMsg && <span className="text-[10px] text-emerald-400">{endpointSaveMsg}</span>}
+                      </div>
+                      <div className="text-[9px] text-slate-500 font-mono">http://{endpointHost}:{endpointPort}</div>
+                    </div>
+                  )}
+
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    disabled={isPipeline && securityModeLocked}
+                    className={`w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none${isPipeline && securityModeLocked ? ' cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    {modelOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value} className="bg-[#121522]" disabled={opt.value === ''}>
+                          {opt.label}
+                        </option>
+                      ))}
+                  </select>
+
+                  {isPipeline && !securityModeLocked && (
+                    <p className="text-[9px] text-slate-500">
+                      Pipeline agents will use this provider &amp; model. Locks when pipeline starts.
+                    </p>
+                  )}
+                </div>
+              </div>
 
               {isPipeline && (
                 <>

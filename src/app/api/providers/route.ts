@@ -7,7 +7,9 @@ const KNOWN_PROVIDERS = [
   { id: 'occ', label: 'Open Claude Code (occ)' },
   { id: 'openclaude', label: 'OpenClaude' },
   { id: 'ollama', label: 'Ollama (local LLM)' },
-  { id: 'lm-studio', label: 'LM Studio / OpenAI-compatible' },
+  { id: 'lm-studio', label: 'LM Studio' },
+  { id: 'openwebui', label: 'Open WebUI' },
+  { id: 'openai-compat', label: 'OpenAI-Compatible Endpoint' },
   { id: 'openai-http', label: 'OpenAI (HTTP)' },
 ];
 

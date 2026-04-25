@@ -1,16 +1,18 @@
 Overview — Architecture Deep Dive
 =================================
 
+**Last updated: 2026-04-25** (multi-provider LLM integration + dual LM Studio hosts)
+
 Summary
 -------
-`the-dev-squad` is a Next.js (app router) TypeScript application that orchestrates a multi-agent "Dev Squad" powered by the `claude` CLI. The product design centers on treating Claude as a team with specialized roles (Supervisor + specialists). Two main modes exist: Pipeline Mode (automated orchestrator running agents) and Manual Mode (human orchestrator spawning Claude sessions directly).
+`the-dev-squad` is a Next.js (app router) TypeScript application that orchestrates a multi-agent "Dev Squad" powered by the `claude` CLI and now configurable LLM providers. The product design centers on treating Claude as a team with specialized roles (Supervisor + specialists). Two main modes exist: Pipeline Mode (automated orchestrator running agents) and Manual Mode (human orchestrator spawning Claude sessions directly).
 
 Key technologies & frameworks
 ----------------------------
 - Next.js (version 16) + React 19 (frontend)
 - TypeScript for the codebase
 - Node.js scripts and small shell helpers (under `scripts/`)
-- The project runs Claude via a local `claude` CLI (spawned processes and shell wrappers)
+- The project runs Claude (or remote LLMs) via local CLI / HTTP shim (spawned processes)
 - Orchestration code lives in `pipeline/` and `src/lib/` (pipeline-* helpers)
 
 High-level components
@@ -21,6 +23,66 @@ High-level components
 - Pipeline library: `src/lib/pipeline-*.ts` — planning, runtime state, supervisor and control logic
 - Hooks & integration: `.claude/settings.json` and `pipeline/.claude/hooks/approval-gate.sh` are used to gate tool use and implement permission checks
 - Scripts: `scripts/probe-auth.sh` and other utilities that check credentials and run the `claude` binary
+- Multi-provider adapters: `src/lib/modelAdapters/` — 9 provider adapters with model discovery and execution
+
+Multi-Provider LLM System (added April 2025)
+---------------------------------------------
+The app supports 9 LLM providers selectable from both pipeline and manual modes:
+
+| Provider     | Status         | Host/Endpoint                      | Models |
+|--------------|----------------|-------------------------------------|--------|
+| claude-cli   | ✅ LIVE        | local ~/.claude                     | 2 |
+| ccr          | ✅ LIVE        | localhost:3456 (proxy to LM Studio) | 25 |
+| occ          | ✅ LIVE        | AWS Bedrock via local claude        | 3 |
+| openclaude   | ✅ LIVE        | local claude binary                 | 2 |
+| ollama       | ✅ LIVE        | localhost:11434                     | 2 |
+| lm-studio    | ✅ LIVE        | 192.168.1.90:1234 + 10.2.0.90:1234 | 23 |
+| openwebui    | ✅ LIVE        | localhost:3000 (via some port)      | 1 |
+| openai-compat| ⚠️  No server  | configurable                        | 0 |
+| openai-http  | ⚠️  No key     | api.openai.com                      | 0 |
+
+LM Studio Dual-Host Configuration (April 2026)
+-----------------------------------------------
+LM Studio is accessible via two network interfaces on the same machine (192.168.1.90):
+- **Primary**: `http://192.168.1.90:1234` (LAN interface)
+- **Secondary**: `http://10.2.0.90:1234` (VPN/second interface)
+
+Both are auto-detected from `~/.claude-code-router/config.json` (CCR config).
+The adapter (`src/lib/modelAdapters/lmStudioAdapter.ts`) tries ALL CCR-configured LM Studio
+hosts and merges their unique model lists. The primary URL is used for execution.
+
+LM Studio Model Inventory (live as of 2026-04-25, 23 models):
+- allenai/olmo-3-32b-think
+- baidu/ernie-4.5-21b-a3b
+- claude-3.7-sonnet-reasoning-gemma3-12b
+- essentialai/rnj-1
+- glm-4.7-flash-claude-opus-4.5-high-reasoning-distill-v2-heretic-i1
+- google/gemma-3-27b, google/gemma-3n-e4b, google/gemma-4-26b-a4b, google/gemma-4-31b
+- ibm/granite-3.2-8b
+- lfm2.5-1.2b-distilled-claude-4.6
+- liquid/lfm2-1.2b, liquid/lfm2-24b-a2b, liquid/lfm2.5-1.2b
+- meta/llama-3.3-70b
+- mineru2.5-pro-2604-1.2b-i1, minimax-m2.5
+- nvidia/nemotron-3-nano-4b
+- qwen/qwen3.5-35b-a3b, qwen/qwen3.5-9b
+- qwopus3.5-27b-v3
+- text-embedding-nomic-embed-text-v1.5
+- zai-org/glm-4.6v-flash
+
+Pipeline Mode Provider/Model Selection (added April 2026)
+----------------------------------------------------------
+Both `src/app/page.tsx` and `src/app/squad/page.tsx` now show the provider & model picker
+in BOTH pipeline and manual modes (was previously hidden in pipeline mode).
+Controls lock (disabled) once pipeline starts (`securityModeLocked`), same as Security/Permission Mode.
+The selected model+provider flows through: UI → usePipelineState → startPipeline →
+pipeline-control.ts saves to state file → orchestrator reads selectedModel per agent.
+
+Key configuration files
+-----------------------
+- `~/.claude-code-router/config.json` — CCR router config, includes lmstudio + lmstudio-10.2 providers
+- `provider-config.json` (project root) — user-saved endpoint host/port overrides per provider
+- `src/lib/providerConfig.ts` — reads above, exports `getLmStudioUrlsFromCcrConfig()` (plural, returns both hosts)
+- `src/app/api/models/route.ts` — model discovery API, DEFAULT_MODELS has all 23 LM Studio models as fallback
 
 Where things connect
 --------------------
@@ -47,3 +109,5 @@ Quick references (where to look)
 - Runner & orchestrator: `pipeline/runner.ts`, `pipeline/orchestrator.ts`, `pipeline/README` (if present)
 - Pipeline helpers: files under `src/lib/pipeline-*.ts` (planning, runtime, supervisor, control)
 - Claude-related scripts: `scripts/probe-auth.sh` and `.claude` templates copied by `src/lib/pipeline-control.ts`
+- Provider adapters: `src/lib/modelAdapters/` — each provider has its own adapter file
+- Full provider test: `scripts/test-all-providers.mjs` — runs live model discovery for all 9 providers

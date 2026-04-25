@@ -1,20 +1,11 @@
 /**
- * OllamaAdapter — Model adapter for Ollama local LLM runtime.
+ * OllamaAdapter — Model adapter for Ollama local/remote LLM runtime.
  *
- * Ollama exposes an OpenAI-compatible API at http://localhost:11434/v1,
- * so execution is handled by reusing the http-runner-shim.mjs shim (same
- * path used by lm-studio and openai-http adapters).
+ * Host/port is configurable via /api/provider-config (UI text boxes) or
+ * the OLLAMA_BASE_URL environment variable.
+ * Default: http://localhost:11434
  *
- * Discovery sources (in order):
- * 1. `ollama list` CLI output (most reliable; uses binary at /usr/local/bin/ollama)
- * 2. HTTP GET to <BASE_URL>/api/tags (Ollama native endpoint)
- * 3. HTTP GET to <BASE_URL>/v1/models (OpenAI-compatible endpoint)
- * 4. OLLAMA_MODEL env var (manual override)
- *
- * Environment variables:
- *   OLLAMA_BASE_URL   — override base URL (default: http://localhost:11434)
- *   OLLAMA_MODEL      — comma-separated fallback model ids
- *   OLLAMA_API_KEY    — optional API key (usually not needed for local Ollama)
+ * Supports both local and remote Ollama instances on any host/port.
  */
 import path from 'path';
 import { ChildProcessWithoutNullStreams } from 'child_process';
@@ -26,15 +17,15 @@ import {
   ModelAdapter,
   spawnLocal,
 } from './ModelAdapter';
+import { getBaseUrlForProvider, getProviderConfig } from '../providerConfig';
 
-const DEFAULT_OLLAMA_BASE = 'http://localhost:11434';
-
-function getBaseUrl(): string {
-  return (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE).replace(/\/+$/, '');
+function getOllamaBase(): string {
+  // getBaseUrlForProvider handles env-var overrides + saved config
+  return getBaseUrlForProvider('ollama');
 }
 
 function getOpenAIBaseUrl(): string {
-  return `${getBaseUrl()}/v1`;
+  return `${getOllamaBase()}/v1`;
 }
 
 function splitModelEnv(value?: string): string[] {
@@ -83,9 +74,15 @@ export default class OllamaAdapter implements ModelAdapter {
   readonly id = 'ollama';
   readonly label = 'Ollama (local LLM)';
 
-  /** Available if the `ollama` binary is on PATH OR the env base URL is set. */
+  /** Available if the `ollama` CLI is on PATH, OLLAMA_BASE_URL is set, OR a non-default host is configured. */
   isAvailable(): boolean {
-    return commandExists('ollama') || Boolean(process.env.OLLAMA_BASE_URL);
+    if (commandExists('ollama')) return true;
+    if (process.env.OLLAMA_BASE_URL) return true;
+    const cfg = getProviderConfig('ollama');
+    // If a non-localhost host has been saved, consider it available (remote Ollama)
+    if (cfg.host && cfg.host !== 'localhost' && cfg.host !== '127.0.0.1') return true;
+    if (cfg.baseUrl) return true;
+    return false;
   }
 
   supportsExecution(): boolean {
@@ -104,7 +101,7 @@ export default class OllamaAdapter implements ModelAdapter {
       ...process.env,
       ...opts.env,
       MODEL_PROVIDER: this.id,
-      OLLAMA_BASE_URL: getBaseUrl(),
+      OLLAMA_BASE_URL: getOllamaBase(),
       OPENAI_BASE_URL: baseUrl,
       // Ollama typically doesn't need an API key; provide empty string if unset
       OPENAI_API_KEY: process.env.OLLAMA_API_KEY || process.env.OPENAI_API_KEY || 'ollama',
@@ -133,7 +130,7 @@ export default class OllamaAdapter implements ModelAdapter {
     }
 
     // 2. Try HTTP /api/tags (native Ollama endpoint)
-    const base = getBaseUrl();
+    const base = getOllamaBase();
     try {
       const tagsOut = await captureCommandOutput('curl', [
         '-sS',

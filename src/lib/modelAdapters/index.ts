@@ -5,6 +5,8 @@ import OpenClaudeAdapter from './openClaudeAdapter';
 import LMStudioAdapter from './lmStudioAdapter';
 import ClaudeCodeRouterAdapter from './claudeCodeRouterAdapter';
 import OllamaAdapter from './ollamaAdapter';
+import OpenWebUIAdapter from './openWebUIAdapter';
+import OpenAICompatAdapter from './openAICompatAdapter';
 import type { ModelAdapter } from './ModelAdapter';
 
 /**
@@ -44,6 +46,14 @@ export function getModelAdapter(provider?: string): ModelAdapter | null {
 
   if (p === 'ollama') {
     return new OllamaAdapter();
+  }
+
+  if (p === 'openwebui' || p === 'open-webui') {
+    return new OpenWebUIAdapter();
+  }
+
+  if (p === 'openai-compat' || p === 'openai-compatible') {
+    return new OpenAICompatAdapter();
   }
 
   // Unknown provider

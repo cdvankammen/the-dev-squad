@@ -55,3 +55,6 @@ CLAUDE.md
 devSquadMemory/.venv/
 devSquadMemory/workspace_docs.jsonl
 devSquadMemory/workspace_vectors.jsonl
+
+# Provider endpoint config (local overrides — not committed)
+provider-config.json

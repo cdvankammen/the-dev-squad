@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   AdapterSpawnOptions,
   captureCommandOutput,
@@ -7,6 +10,52 @@ import {
   ModelAdapter,
   spawnLocal,
 } from './ModelAdapter';
+
+/**
+ * Read models directly from CCR's config.json — the most reliable source.
+ * CCR stores provider configs under ~/.claude-code-router/config.json.
+ * Shape: { Providers: [{ name: string, models: string[] }, ...] }
+ */
+function readCcrConfigModels(): string[] {
+  const configPath = join(homedir(), '.claude-code-router', 'config.json');
+  if (!existsSync(configPath)) return [];
+  try {
+    const raw = readFileSync(configPath, 'utf8');
+    const config = JSON.parse(raw) as {
+      Providers?: Array<{ name?: string; models?: string[] }>;
+      Router?: Record<string, string>;
+    };
+    const found = new Set<string>();
+
+    // Collect all model ids listed under each provider
+    if (Array.isArray(config.Providers)) {
+      for (const p of config.Providers) {
+        if (Array.isArray(p.models)) {
+          for (const m of p.models) {
+            if (typeof m === 'string' && m.trim()) found.add(m.trim());
+          }
+        }
+      }
+    }
+
+    // Also extract model names referenced by the Router routes (e.g. "lmstudio,model-name")
+    if (config.Router && typeof config.Router === 'object') {
+      for (const route of Object.values(config.Router)) {
+        if (typeof route === 'string') {
+          const parts = route.split(',');
+          if (parts.length >= 2) {
+            const modelPart = parts.slice(1).join(',').trim();
+            if (modelPart) found.add(modelPart);
+          }
+        }
+      }
+    }
+
+    return Array.from(found).sort();
+  } catch {
+    return [];
+  }
+}
 
 /** Adapter for Claude Code Router (`ccr`) wrapper CLI */
 export class ClaudeCodeRouterAdapter implements ModelAdapter {
@@ -62,6 +111,18 @@ export class ClaudeCodeRouterAdapter implements ModelAdapter {
   async discoverModels(): Promise<string[]> {
     const cmd = this.resolveCommand();
     const found = new Set<string>(collectConfiguredModelIds());
+
+    // Primary: read CCR's config.json directly — this is the most reliable source
+    // because CCR does not expose a machine-readable --list-models CLI flag.
+    const configModels = readCcrConfigModels();
+    for (const m of configModels) found.add(m);
+
+    // If config provided models, return early — no need to call the CLI.
+    if (configModels.length > 0) {
+      return Array.from(found).sort();
+    }
+
+    // Fallback: try various CLI flags (these rarely work but worth trying)
     if (!cmd) return Array.from(found).sort();
 
     const tries: string[][] = [

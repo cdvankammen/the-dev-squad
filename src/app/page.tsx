@@ -73,6 +73,18 @@ export default function PipelinePage() {
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
 
+  // Endpoint config (host/port) for configurable HTTP providers
+  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
+  const [endpointHost, setEndpointHost] = useState('localhost');
+  const [endpointPort, setEndpointPort] = useState<number>(11434);
+  const [endpointApiKey, setEndpointApiKey] = useState('');
+  const [endpointSaving, setEndpointSaving] = useState(false);
+  const [endpointSaveMsg, setEndpointSaveMsg] = useState('');
+
+  const DEFAULT_PORTS: Record<string, number> = {
+    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080,
+  };
+
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
@@ -105,8 +117,47 @@ export default function PipelinePage() {
     return fallback.length > 0 ? toModelOptions(fallback) : [{ value: '', label: 'No models available' }];
   };
 
-  async function fetchModelsForProvider(providerId: string) {
+  async function loadEndpointConfig(providerId: string) {
+    if (!CONFIGURABLE_PROVIDERS.includes(providerId)) return;
     try {
+      const res = await fetch(`/api/provider-config?id=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const cfg = data?.config;
+      if (cfg) {
+        setEndpointHost(cfg.host ?? 'localhost');
+        setEndpointPort(cfg.port ?? DEFAULT_PORTS[providerId] ?? 8080);
+        setEndpointApiKey(cfg.apiKey ?? '');
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveEndpointConfig(providerId: string) {
+    if (!CONFIGURABLE_PROVIDERS.includes(providerId)) return;
+    setEndpointSaving(true);
+    setEndpointSaveMsg('');
+    try {
+      const res = await fetch('/api/provider-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: providerId, host: endpointHost, port: endpointPort, apiKey: endpointApiKey }),
+      });
+      if (res.ok) {
+        setEndpointSaveMsg('Saved ✓');
+        // Re-fetch models with new endpoint
+        void fetchModelsForProvider(providerId);
+      } else {
+        setEndpointSaveMsg('Save failed');
+      }
+    } catch {
+      setEndpointSaveMsg('Save failed');
+    } finally {
+      setEndpointSaving(false);
+      setTimeout(() => setEndpointSaveMsg(''), 3000);
+    }
+  }
+
+  async function fetchModelsForProvider(providerId: string) {    try {
       const res = await fetch(`/api/models?provider=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
       if (!res.ok) {
         const fallbackOptions = fallbackOptionsForProvider(providerId);
@@ -160,6 +211,8 @@ export default function PipelinePage() {
       setSelectedModel(first.value);
     }
 
+    // Load saved endpoint config for configurable providers
+    void loadEndpointConfig(selectedProvider);
     void fetchModelsForProvider(selectedProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProvider, discoveredOnly]);
@@ -519,71 +572,144 @@ export default function PipelinePage() {
                   style={{ borderRadius: '0 7px 7px 0' }}
                 >Manual</button>
               </div>
-              {/* Model Picker — manual mode only */}
-              {!isPipeline && (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={selectedProvider}
-                      onChange={(e) => setSelectedProvider(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
-                    >
-                      {availableProviders.length === 0 ? (
-                        <option value="claude-cli">Claude</option>
-                      ) : (
-                        availableProviders.map((p) => (
-                          <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
-                        ))
-                      )}
-                    </select>
-
-                    <button
-                      onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
-                      className="rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10"
-                    >
-                      Refresh
-                    </button>
-
-                    <label className="inline-flex items-center gap-2 text-[11px] text-slate-400">
-                      <input
-                        type="checkbox"
-                        checked={discoveredOnly}
-                        onChange={(e) => {
-                          const v = e.target.checked;
-                          setDiscoveredOnly(v);
-                          try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
-                          if (selectedProvider) void fetchModelsForProvider(selectedProvider);
-                        }}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-xs">Discovered-only</span>
-                    </label>
-                  </div>
-
-                  <div className="text-[11px] text-slate-400">
-                    Models: <span className="font-mono">{availableModelCount}</span>
-                    {selectedProvider && discoveryInfo[selectedProvider] && (
-                      discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                      ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
-                      : discoveryInfo[selectedProvider].usedDiscovery
-                        ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
-                        : discoveryInfo[selectedProvider].fallbackUsed
-                          ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
-                          : null
-                    )}
-                  </div>
-
+              {/* Provider & Model — visible in both pipeline and manual modes */}
+              <div className="space-y-2">
+                {isPipeline && (
+                  <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Provider &amp; Model</div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
                   <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                    disabled={isPipeline && securityModeLocked}
+                    className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none${isPipeline && securityModeLocked ? ' cursor-not-allowed opacity-50' : ''}`}
                   >
-                    {modelOptions.map(opt => (
-                      <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]" disabled={opt.value === ''}>{opt.label}</option>
-                    ))}
+                    {availableProviders.length === 0 ? (
+                      <option value="claude-cli">Claude</option>
+                    ) : (
+                      availableProviders.map((p) => (
+                        <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                      ))
+                    )}
                   </select>
+
+                  <button
+                    onClick={() => selectedProvider && fetchModelsForProvider(selectedProvider)}
+                    disabled={isPipeline && securityModeLocked}
+                    className="rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300 bg-white/5 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Refresh
+                  </button>
+
+                  <label className="inline-flex items-center gap-2 text-[11px] text-slate-400">
+                    <input
+                      type="checkbox"
+                      checked={discoveredOnly}
+                      disabled={isPipeline && securityModeLocked}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setDiscoveredOnly(v);
+                        try { localStorage.setItem('discoveredOnly', String(v)); } catch {}
+                        if (selectedProvider) void fetchModelsForProvider(selectedProvider);
+                      }}
+                      className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <span className="text-xs">Discovered-only</span>
+                  </label>
                 </div>
-              )}
+
+                <div className="text-[11px] text-slate-400">
+                  Models: <span className="font-mono">{availableModelCount}</span>
+                  {selectedProvider && discoveryInfo[selectedProvider] && (
+                    discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                    ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                    : discoveryInfo[selectedProvider].usedDiscovery
+                      ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                      : discoveryInfo[selectedProvider].fallbackUsed
+                        ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
+                        : null
+                  )}
+                </div>
+
+                {/* Endpoint Config — shown for HTTP-based providers */}
+                {selectedProvider && CONFIGURABLE_PROVIDERS.includes(selectedProvider) && (
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Endpoint Config</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wider">Host</label>
+                        <input
+                          type="text"
+                          value={endpointHost}
+                          onChange={(e) => setEndpointHost(e.target.value)}
+                          placeholder="localhost"
+                          disabled={isPipeline && securityModeLocked}
+                          className="w-36 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wider">Port</label>
+                        <input
+                          type="number"
+                          value={endpointPort}
+                          onChange={(e) => setEndpointPort(Number(e.target.value))}
+                          min={1}
+                          max={65535}
+                          disabled={isPipeline && securityModeLocked}
+                          className="w-20 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                      </div>
+                      {(selectedProvider === 'openwebui' || selectedProvider === 'openai-compat' || selectedProvider === 'openai-http') && (
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] text-slate-500 uppercase tracking-wider">API Key</label>
+                          <input
+                            type="password"
+                            title="API Key"
+                            value={endpointApiKey}
+                            onChange={(e) => setEndpointApiKey(e.target.value)}
+                            placeholder="(optional)"
+                            disabled={isPipeline && securityModeLocked}
+                            className="w-36 rounded border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-0.5 justify-end">
+                        <span className="text-[10px] text-transparent">save</span>
+                        <button
+                          onClick={() => selectedProvider && void saveEndpointConfig(selectedProvider)}
+                          disabled={endpointSaving || (isPipeline && securityModeLocked)}
+                          className="rounded px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {endpointSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                      {endpointSaveMsg && (
+                        <span className="text-[11px] text-emerald-400">{endpointSaveMsg}</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      URL: <span className="font-mono text-slate-400">http://{endpointHost}:{endpointPort}</span>
+                    </div>
+                  </div>
+                )}
+
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  disabled={isPipeline && securityModeLocked}
+                  className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none${isPipeline && securityModeLocked ? ' cursor-not-allowed opacity-50' : ''}`}
+                >
+                  {modelOptions.map(opt => (
+                    <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]" disabled={opt.value === ''}>{opt.label}</option>
+                  ))}
+                </select>
+
+                {isPipeline && !securityModeLocked && (
+                  <p className="text-[10px] text-slate-500">
+                    Pipeline agents will all use this provider &amp; model. Lock-in once pipeline starts.
+                  </p>
+                )}
+              </div>
 
               <p className="mt-2 text-[12px] leading-relaxed text-slate-200">{modePosture.summary}</p>
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{modePosture.detail}</p>
