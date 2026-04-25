@@ -119,3 +119,58 @@ export PIPELINE_DOCKER_AGENT_CMD="/usr/local/share/npm-global/bin/occ"
 ## 11) Bedrock note
 
 Bedrock execution requires valid AWS credentials/profile in the process runtime (host/container). Discovery output alone does not prove inference works.
+
+---
+
+## Rebase-recovery quick verify (cli-changes)
+
+Use this after branch switches or rebases to re-confirm provider wiring:
+
+```bash
+npx tsc --noEmit -p tsconfig.json
+npx tsx scripts/test-models.mjs claude-cli
+npx tsx scripts/test-models.mjs ccr
+npx tsx scripts/test-models.mjs occ
+npx tsx scripts/test-models.mjs openclaude
+npx tsx scripts/test-models.mjs openai-http
+npx tsx scripts/test-models.mjs lm-studio
+npx tsx scripts/test-chat-manual-provider-switch.mjs
+npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "Say OK"
+npx tsx scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK"
+npx tsx scripts/test-chat-provider-smoke.mjs occ claude-sonnet-4-6 "Say OK"
+npx tsx scripts/test-chat-provider-smoke.mjs openclaude haiku "Say OK"
+```
+
+If you see `RunnerOptions requires either roleFile or systemPrompt`, immediately run:
+
+```bash
+npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "diagnose-runner-options"
+```
+
+and inspect:
+
+```bash
+tail -n 200 logs/server-errors.log
+```
+
+
+### Extra deep diagnostics commands
+
+```bash
+npx tsx scripts/test-api-surface.mjs
+npx tsx scripts/test-provider-model-isolation.mjs
+npx tsx scripts/test-provider-tools-installed.mjs
+npx tsx scripts/test-ui-control-wiring.mjs
+npx tsx scripts/test-start-pipeline-provider-selection.mjs
+```
+
+
+```bash
+npx tsx scripts/test-pipeline-route-controls.mjs
+```
+
+
+```bash
+npx tsx scripts/test-api-extended-routes.mjs
+```
+

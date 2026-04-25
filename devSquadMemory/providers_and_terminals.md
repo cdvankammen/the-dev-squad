@@ -90,3 +90,42 @@ Notes:
 Yes, Bedrock-backed model identifiers can be used with CLI wrappers if runtime AWS/provider auth is valid in the environment that executes the process (host or container).
 
 Without valid credentials/profile, discovery can still show configured IDs while execution fails.
+
+---
+
+## CCR adapter notes (post-rebase fix)
+
+`ccr` is now wired as a first-class provider and requires two compatibility behaviors in this codebase:
+
+1. When requesting `--output-format stream-json`, `ccr` requires `--verbose`.
+2. In `ccr code --print` flow, prompt delivery is more reliable through **stdin** than argv positional prompt.
+
+Implementation location:
+- `src/lib/modelAdapters/claudeCodeRouterAdapter.ts`
+
+Observed result:
+- `scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK"` returns 200 and does not trigger the RunnerOptions validation error.
+
+### Provider execution summary in this host
+- `claude-cli`: working with Bedrock-backed model identifiers in this environment.
+- `ccr`: working after stdin + verbose adapter bridge.
+- `occ`: adapter spawn working; command returns stream-json output in tests.
+- `openclaude`: adapter spawn working; returns assistant/result stream-json in tests.
+- `openai-http` / `lm-studio`: HTTP shim works with mock server; production behavior depends on endpoint availability and model listing endpoint.
+
+### Host CLI availability snapshot (deep pass)
+
+From `scripts/test-provider-tools-installed.mjs`:
+
+- `claude`: available
+- `ccr`: available
+- `occ`: available
+- `openclaude`: available
+- `ollama`: available
+- `lmstudio`: not found on PATH
+
+Implication: LM Studio should be configured as HTTP/OpenAI-compatible endpoint (adapter path), not as a required local CLI binary in this repo.
+
+### CCR probe update
+
+`ccr --help` may return non-zero in this environment, but `ccr code --help` succeeds and is now used as the tool-availability probe in `scripts/test-provider-tools-installed.mjs`.

@@ -1,0 +1,14 @@
+────────────────────────────────────────────────────────────────────────────────
+ ▐▛███▜▌   Claude Code · the-dev-squad
+▝▜█████▛▘  2026-04-25 01:09 · Branch: cli-changes
+  ▘▘ ▝▝    Session: d18df364
+────────────────────────────────────────────────────────────────────────────────
+
+❯ Reply with exactly OK and nothing else.
+  You are a terse test assistant.
+
+⏺ API Error (claude-sonnet-4-6): 400 The provided model identifier is invalid..
+  Try --model to switch to us.anthropic.claude-sonnet-4-5-20250929-v1:0.
+
+────────────────────────────────────────────────────────────────────────────────
+

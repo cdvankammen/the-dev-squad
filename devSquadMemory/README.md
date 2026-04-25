@@ -35,3 +35,28 @@ This folder also includes local vector memory scripts/artifacts:
 - `workspace_docs.jsonl`
 - `workspace_vectors.jsonl`
 - `vector_db_manifest.md`
+
+---
+
+## Rebase recovery note (2026-04-24)
+
+After a branch switch rollback, a full re-audit was rerun on `cli-changes`.
+
+Use these first when re-validating:
+
+```bash
+npx tsc --noEmit -p tsconfig.json
+npx tsx scripts/test-models.mjs claude-cli
+npx tsx scripts/test-models.mjs ccr
+npx tsx scripts/test-models.mjs occ
+npx tsx scripts/test-models.mjs openclaude
+npx tsx scripts/test-chat-manual-provider-switch.mjs
+npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "Say OK"
+npx tsx scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK"
+```
+
+If chat reports 500s, inspect:
+
+- `devSquadMemory/chat_audit.md`
+- `devSquadMemory/verification_report.md`
+- `logs/server-errors.log`

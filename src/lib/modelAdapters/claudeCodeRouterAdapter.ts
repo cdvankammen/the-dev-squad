@@ -31,9 +31,32 @@ export class ClaudeCodeRouterAdapter implements ModelAdapter {
     if (!cmd) {
       throw new Error('`ccr` was not found on PATH. Install/configure Claude Code Router first.');
     }
-    // ccr executes Claude-compatible commands through the `code` subcommand.
-    // Use `--` so downstream Claude arguments are forwarded verbatim.
-    return spawnLocal(cmd, ['code', '--', ...(opts.args || [])], opts);
+
+    const args = [...(opts.args || [])];
+
+    // ccr requires --verbose whenever stream-json is requested.
+    const outIdx = args.indexOf('--output-format');
+    if (outIdx >= 0 && args[outIdx + 1] === 'stream-json' && !args.includes('--verbose')) {
+      args.splice(outIdx, 0, '--verbose');
+    }
+
+    // In `ccr code --print` mode, passing the prompt via stdin is more reliable
+    // than positional argv forwarding.
+    let promptFromArgs: string | null = null;
+    if (args.length > 0) {
+      const last = args[args.length - 1];
+      if (typeof last === 'string' && !last.startsWith('-')) {
+        promptFromArgs = last;
+        args.pop();
+      }
+    }
+
+    const child = spawnLocal(cmd, ['code', ...args], opts);
+    if (promptFromArgs && child.stdin) {
+      child.stdin.write(`${promptFromArgs}\n`);
+      child.stdin.end();
+    }
+    return child;
   }
 
   async discoverModels(): Promise<string[]> {

@@ -14,7 +14,11 @@
     "test:planning": "npx tsx scripts/test-pipeline-planning.mjs",
     "test:supervisor": "npx tsx scripts/test-supervisor-snapshot.mjs",
     "test:supervisor-concept": "npx tsx scripts/test-supervisor-concept.mjs",
-    "test:supervisor-intents": "npx tsx scripts/test-supervisor-intents.mjs"
+    "test:supervisor-intents": "npx tsx scripts/test-supervisor-intents.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -28,6 +32,7 @@
     "remark-breaks": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -65,7 +65,7 @@ async function main() {
   const { createRunner } = await import('../pipeline/runner.ts');
 
   const tests = [
-    { provider: 'ccr', model: process.env.CCR_TEST_MODEL || 'claude-sonnet-4-6' },
+    { provider: 'ccr', model: process.env.CCR_TEST_MODEL || 'haiku' },
     { provider: 'occ', model: process.env.OCC_TEST_MODEL || 'claude-sonnet-4-6' },
     { provider: 'openclaude', model: process.env.OPENCLAUDE_TEST_MODEL || 'haiku' },
   ];

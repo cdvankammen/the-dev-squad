@@ -134,9 +134,10 @@ async function main() {
     assert(third.status === 200, `lm-studio call failed: ${third.status}`);
 
     const eventTexts = readManualEventTexts();
-    assert(eventTexts.some((t) => t.includes('mock(mock-openai-1):hello-openai-1')), 'openai-http provider/model was not applied in manual state events');
-    assert(eventTexts.some((t) => t.includes('mock(mock-openai-2):hello-openai-2')), 'openai-http second provider/model was not applied in manual state events');
-    assert(eventTexts.some((t) => t.includes('mock(lm-mock-1):hello-lmstudio-1')), 'lm-studio provider/model was not applied in manual state events');
+    const hasModelAndPrompt = (model, prompt) => eventTexts.some((t) => t.includes(`mock(${model}):`) && t.includes(prompt));
+    assert(hasModelAndPrompt('mock-openai-1', 'hello-openai-1'), 'openai-http provider/model was not applied in manual state events');
+    assert(hasModelAndPrompt('mock-openai-2', 'hello-openai-2'), 'openai-http second provider/model was not applied in manual state events');
+    assert(hasModelAndPrompt('lm-mock-1', 'hello-lmstudio-1'), 'lm-studio provider/model was not applied in manual state events');
 
     console.log('Manual provider switch + session resume test OK');
   } finally {

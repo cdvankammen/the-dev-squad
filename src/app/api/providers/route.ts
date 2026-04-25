@@ -6,6 +6,7 @@ const KNOWN_PROVIDERS = [
   { id: 'ccr', label: 'Claude Code Router (ccr)' },
   { id: 'occ', label: 'Open Claude Code (occ)' },
   { id: 'openclaude', label: 'OpenClaude' },
+  { id: 'ollama', label: 'Ollama (local LLM)' },
   { id: 'lm-studio', label: 'LM Studio / OpenAI-compatible' },
   { id: 'openai-http', label: 'OpenAI (HTTP)' },
 ];

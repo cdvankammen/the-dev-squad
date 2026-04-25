@@ -1,0 +1,9 @@
+{
+  "concept": "provider selection persistence recheck",
+  "sessions": {
+    "A": "seed-session-a"
+  },
+  "model": "claude-sonnet-4-6",
+  "provider": "claude-cli",
+  "discoveredOnly": false
+}

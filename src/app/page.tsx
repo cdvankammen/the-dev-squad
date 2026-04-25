@@ -564,11 +564,11 @@ export default function PipelinePage() {
                     Models: <span className="font-mono">{availableModelCount}</span>
                     {selectedProvider && discoveryInfo[selectedProvider] && (
                       discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                      ? <span className="ml-2 text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                      ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
                       : discoveryInfo[selectedProvider].usedDiscovery
-                        ? <span className="ml-2 text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                        ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
                         : discoveryInfo[selectedProvider].fallbackUsed
-                          ? <span className="ml-2 text-xs text-slate-400">(provider fallback)</span>
+                          ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
                           : null
                     )}
                   </div>

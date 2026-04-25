@@ -37,3 +37,23 @@ Audited substantive claims from the pasted Copilot conversation against current 
 ## Important caveat
 
 Discovery output is not equal to successful inference. Real execution still depends on auth/config/runtime compatibility for each provider.
+
+---
+
+## Post-rebase spot checks (2026-04-24, cli-changes)
+
+### Manual `/api/chat` provider smoke
+Executed:
+- `npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "Say OK"`
+- `npx tsx scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK"`
+- `npx tsx scripts/test-chat-provider-smoke.mjs occ claude-sonnet-4-6 "Say OK"`
+- `npx tsx scripts/test-chat-provider-smoke.mjs openclaude haiku "Say OK"`
+
+Observed: all returned HTTP 200 with `{ success: true, mode: "manual" }` and **no** `RunnerOptions requires either roleFile or systemPrompt` errors.
+
+### Additional regression checks
+- `scripts/test-chat-manual-provider-switch.mjs`: confirms provider/model switching is persisted in manual state events.
+- `scripts/test-chat-logging.mjs`: confirms route returns JSON error and appends persistent logs when `req.json()` fails.
+
+### CCR-specific compatibility change verified
+- Adapter now injects `--verbose` for `stream-json` and sends prompt via stdin for `ccr code --print` mode.

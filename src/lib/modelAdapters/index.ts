@@ -4,6 +4,7 @@ import OpenClaudeCodeAdapter from './openClaudeCodeAdapter';
 import OpenClaudeAdapter from './openClaudeAdapter';
 import LMStudioAdapter from './lmStudioAdapter';
 import ClaudeCodeRouterAdapter from './claudeCodeRouterAdapter';
+import OllamaAdapter from './ollamaAdapter';
 import type { ModelAdapter } from './ModelAdapter';
 
 /**
@@ -39,6 +40,10 @@ export function getModelAdapter(provider?: string): ModelAdapter | null {
 
   if (p === 'ccr' || p === 'claude-code-router') {
     return new ClaudeCodeRouterAdapter();
+  }
+
+  if (p === 'ollama') {
+    return new OllamaAdapter();
   }
 
   // Unknown provider

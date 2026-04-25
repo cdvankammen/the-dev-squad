@@ -1,7 +1,7 @@
 # Branch baseline analysis (main vs current)
 
 Date: 2026-04-24
-Current branch: `fix/namespace-tools`
+Current branch: `cli-changes`
 Baseline branch requested as `master`: **not present** in this repo.
 Actual baseline used: `main`.
 
@@ -47,3 +47,35 @@ Before merge/deploy, lock these as required gates:
 4. `npx tsx scripts/test-http-runner.mjs`
 5. `npx tsx scripts/test-start-pipeline.mjs`
 6. `npx tsx scripts/test-cli-adapters.mjs --strict` in an environment where provider auth is configured
+
+---
+
+## Re-check snapshot after branch recovery (2026-04-24)
+
+Current working branch: `cli-changes`
+
+`main..cli-changes` currently includes many commits and ~81 changed files (name-status diff snapshot). This is no longer a single-commit delta.
+
+### Notable functional deltas carried by `cli-changes`
+- Provider/adapters added (`claude-cli`, `ccr`, `occ`, `openclaude`, `openai-http`, `lm-studio`).
+- Model discovery routes and provider routes added.
+- Manual/pipeline provider-model propagation added.
+- HTTP runner shim and related test scripts added.
+- Local RAG/dev memory scripts + docs added.
+
+### Practical implication
+Treat `cli-changes` as an integration branch with broad behavior changes (API/UI/pipeline/tooling), not a small patch branch.
+
+### Suggested workflow
+1. Keep `cli-changes` local for ongoing verification (as requested).
+2. Continue using scripted regressions before any merge/cherry-pick.
+3. Cherry-pick only tested slices when upstreaming to `main`.
+
+### Current delta snapshot (2026-04-24, latest re-check)
+
+- branch: `cli-changes`
+- commits ahead of `main`: 11
+- files changed vs `main`: 122
+- diffstat summary: `122 files changed, 447937 insertions(+), 78 deletions(-)`
+
+This confirms `cli-changes` remains a large integration branch (provider adapters + memory artifacts + test tooling), not a narrow patch branch.

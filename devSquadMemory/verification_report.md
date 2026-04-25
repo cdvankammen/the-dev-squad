@@ -126,3 +126,151 @@ Notes:
 - End-to-end Bedrock inference on all wrappers in this environment (depends on CLI/env/profile setup)
 
 For that gap, see `devSquadMemory/ui_control_test_matrix.md` and `devSquadMemory/runbook.md` for the recommended E2E harness plan.
+
+---
+
+## Rebase recovery re-audit (cli-changes, 2026-04-24 late pass)
+
+### Why this pass happened
+A branch switch in GitHub Desktop removed/overrode prior local changes. This pass re-ran core verification on `cli-changes` after re-applying and re-checking behavior.
+
+### Additional fixes made in this re-audit
+1. **CCR adapter compatibility fix** (`src/lib/modelAdapters/claudeCodeRouterAdapter.ts`)
+   - Added automatic `--verbose` when `--output-format stream-json` is used (required by `ccr`).
+   - Changed prompt handoff for `ccr code --print` to pass prompt via **stdin** instead of argv positional prompt (more reliable with CCR parser behavior).
+2. **Safer process spawning** (`src/lib/modelAdapters/ModelAdapter.ts`)
+   - Switched adapter spawning to `shell: false` to preserve argument boundaries and avoid shell injection/quoting bugs.
+3. **Squad UI model-status layout fix** (`src/app/squad/page.tsx`)
+   - Moved model-status badge styling off inline `ml-2` classes so status text no longer overlays/gets clipped near the scrollbar.
+4. **CCR adapter smoke test quality update** (`scripts/test-cli-adapters.mjs`)
+   - Default CCR smoke model changed to `haiku` (valid in this environment) for stable coverage.
+
+### Re-run evidence (post-fix)
+- Full regression command completed with `FULL_REGRESSION_OK`:
+  - `npx tsc --noEmit -p tsconfig.json`
+  - `npx tsx scripts/test-models.mjs claude-cli`
+  - `npx tsx scripts/test-models.mjs ccr`
+  - `npx tsx scripts/test-models.mjs occ`
+  - `npx tsx scripts/test-models.mjs openclaude`
+  - `npx tsx scripts/test-models.mjs openai-http`
+  - `npx tsx scripts/test-models.mjs lm-studio`
+  - `npx tsx scripts/test-chat-manual-provider-switch.mjs`
+  - `npx tsx scripts/test-chat-logging.mjs`
+  - `npx tsx scripts/test-http-runner.mjs`
+  - `npx tsx scripts/test-cli-adapters.mjs`
+  - `npx tsx scripts/test-start-pipeline.mjs`
+- Direct `/api/chat` provider smoke with real providers returned HTTP 200 and no RunnerOptions validation failure:
+  - `claude-cli`, `ccr`, `occ`, `openclaude`.
+
+### Specific bug status updates
+- **"RunnerOptions requires either roleFile or systemPrompt"**
+  - Could not be reproduced in current branch state with direct provider smoke tests.
+  - If this reappears, capture request payload in `logs/server-errors.log` and run `scripts/test-chat-provider-smoke.mjs` immediately for the selected provider.
+
+- **Provider/model dropdown showing stale/same models**
+  - API evidence confirms provider-specific model lists are distinct in this environment:
+    - `claude-cli`: bedrock arn + haiku
+    - `ccr`: bedrock arn + claude + haiku
+    - `occ`: bedrock arn + claude-sonnet-4-6 + haiku
+    - `openclaude`: bedrock arn + haiku
+
+### Known environment-dependent limits
+- `openai-http` and `lm-studio` discovery still return empty when local endpoint/config is not available; HTTP shim tests pass with mock endpoints.
+- Start-pipeline verification remains sensitive to existing active run lock in shared pipeline state.
+
+### Additional deep-test pass (continued)
+
+New scripts added and executed:
+
+- `scripts/test-api-surface.mjs`
+  - Verifies `/api/health`, `/api/providers`, and `/api/models` JSON contracts.
+- `scripts/test-provider-model-isolation.mjs`
+  - Verifies `/api/models` provider responses are stable per provider across repeated/interleaved calls.
+- `scripts/test-provider-tools-installed.mjs`
+  - Verifies provider CLIs on PATH and help probe behavior.
+- `scripts/test-ui-control-wiring.mjs`
+  - Enumerates interactive UI controls in `page.tsx` and `squad/page.tsx` and confirms handler wiring presence.
+- `scripts/test-start-pipeline-provider-selection.mjs`
+  - Seeds staging state and verifies `startPipelineRun` persists selected provider/model/discoveredOnly into pipeline state.
+
+Observed highlights:
+
+- Tool availability on this host:
+  - present: `claude`, `ccr`, `occ`, `openclaude`, `ollama`
+  - missing on PATH: `lmstudio` (LM Studio use remains HTTP endpoint based in this codebase).
+- Provider-isolation checks pass: interleaved `/api/models` calls stay provider-specific and do not cross-pollute route responses.
+- UI status text class fix applied in both pages to avoid inline overlap near scrollbar zones.
+
+### Deep regression suite command (latest)
+
+```bash
+npx tsc --noEmit -p tsconfig.json && \
+npx tsx scripts/test-api-surface.mjs && \
+npx tsx scripts/test-provider-model-isolation.mjs && \
+npx tsx scripts/test-provider-tools-installed.mjs && \
+npx tsx scripts/test-models.mjs claude-cli && \
+npx tsx scripts/test-models.mjs ccr && \
+npx tsx scripts/test-models.mjs occ && \
+npx tsx scripts/test-models.mjs openclaude && \
+npx tsx scripts/test-models.mjs openai-http && \
+npx tsx scripts/test-models.mjs lm-studio && \
+npx tsx scripts/test-chat-manual-provider-switch.mjs && \
+npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs occ claude-sonnet-4-6 "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs openclaude haiku "Say OK" && \
+npx tsx scripts/test-http-runner.mjs && \
+npx tsx scripts/test-cli-adapters.mjs && \
+npx tsx scripts/test-chat-logging.mjs
+```
+
+Status: pass in current host environment.
+
+### Pipeline route-control endpoint checks
+
+Added and executed `scripts/test-pipeline-route-controls.mjs` to exercise:
+
+- `GET /api/state?mode=pipeline`
+- `POST /api/start-pipeline`
+- `POST /api/stop-pipeline`
+- `POST /api/resume-pipeline`
+- `POST /api/approve`
+
+Result:
+- Route contracts return JSON envelopes consistently.
+- Known expected error envelopes are handled (e.g., no staging session for start, not-paused resume).
+- Invalid approve action currently returns status 200 with `{ success: false }` envelope (documented behavior).
+
+### Super deep suite rerun (post-flake hardening)
+
+After stabilizing `scripts/test-chat-manual-provider-switch.mjs` assertions for retrieved-context prefixes and adding extended route checks, the following full command completed with `SUPER_DEEP_SUITE_OK`:
+
+```bash
+npx tsc --noEmit -p tsconfig.json && \
+npx tsx scripts/test-api-surface.mjs && \
+npx tsx scripts/test-api-extended-routes.mjs && \
+npx tsx scripts/test-provider-model-isolation.mjs && \
+npx tsx scripts/test-provider-tools-installed.mjs && \
+npx tsx scripts/test-ui-control-wiring.mjs && \
+npx tsx scripts/test-pipeline-route-controls.mjs && \
+npx tsx scripts/test-models.mjs claude-cli && \
+npx tsx scripts/test-models.mjs ccr && \
+npx tsx scripts/test-models.mjs occ && \
+npx tsx scripts/test-models.mjs openclaude && \
+npx tsx scripts/test-models.mjs openai-http && \
+npx tsx scripts/test-models.mjs lm-studio && \
+npx tsx scripts/test-chat-manual-provider-switch.mjs && \
+npx tsx scripts/test-chat-provider-smoke.mjs claude-cli haiku "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs ccr haiku "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs occ claude-sonnet-4-6 "Say OK" && \
+npx tsx scripts/test-chat-provider-smoke.mjs openclaude haiku "Say OK" && \
+npx tsx scripts/test-http-runner.mjs && \
+npx tsx scripts/test-cli-adapters.mjs && \
+npx tsx scripts/test-chat-logging.mjs && \
+npx tsx scripts/test-start-pipeline-provider-selection.mjs
+```
+
+Additional notes from this pass:
+- `/api/pipeline-control` unsupported action currently returns status **200** with `{ success: false, error: "Unsupported pipeline control action" }`.
+- `/api/plan` may return **404** with `{ content: null }` when no active plan context exists.
+- `ccr` tool probe is now marked passing via `ccr code --help`.
