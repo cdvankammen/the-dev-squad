@@ -85,6 +85,7 @@ export default function SquadPage() {
   const [chatInput, setChatInput] = useState('');
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
+  const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
 
   // Endpoint config for HTTP-based providers
   const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
@@ -254,7 +255,7 @@ export default function SquadPage() {
   const activeSecurityMode = state.projectDir ? (state.securityMode || 'fast') : selectedSecurityMode;
   const activeRunGoal = state.projectDir ? (state.runGoal || 'full-build') : selectedRunGoal;
   const activeRunFinalAudit = state.projectDir ? !!state.runFinalAudit : selectedRunFinalAudit;
-  const securityModeLocked = isPipeline && (pipelineRunning || pipelinePaused || !!state.projectDir);
+  const securityModeLocked = isPipeline && (pipelineRunning || pipelinePaused);
   const displayedSecurityMode = securityModeLocked ? activeSecurityMode : selectedSecurityMode;
   const displayedRunGoal = securityModeLocked ? activeRunGoal : selectedRunGoal;
   const displayedRunFinalAudit = securityModeLocked ? activeRunFinalAudit : selectedRunFinalAudit;
@@ -301,7 +302,13 @@ export default function SquadPage() {
   }
 
   async function handleStart() {
-    await startPipeline(selectedSecurityMode, selectedRunGoal, undefined, selectedRunFinalAudit, discoveredOnly);
+    setPipelineStartError(null);
+    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, undefined, selectedRunFinalAudit, discoveredOnly);
+    if (!res?.success) {
+      const err = res?.error || 'Unknown error';
+      console.error('Pipeline failed to start:', err);
+      setPipelineStartError(err);
+    }
     setSelectedAgent('S');
   }
 
@@ -312,6 +319,7 @@ export default function SquadPage() {
     await resetState();
     setChatInput('');
     setPendingApproval(null);
+    setPipelineStartError(null);
     setSelectedAgent('S');
   }
 
@@ -851,6 +859,21 @@ export default function SquadPage() {
                     <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
                       <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Run Controls</div>
                       <div className="mt-3 space-y-2">
+                        {/* Pipeline start error — surface it inline so users see it immediately */}
+                        {pipelineStartError && (
+                          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                            <span className="font-semibold">Could not start: </span>{pipelineStartError}
+                            {(pipelineStartError.includes('staging') || pipelineStartError.includes('concept')) && (
+                              <p className="mt-1 text-[10px] text-red-200/70">💬 <strong>Chat with S first:</strong> describe your project in the chat box, then click Start.</p>
+                            )}
+                          </div>
+                        )}
+                        {/* Staging-ready hint: guide user to chat with S before clicking Start */}
+                        {!pipelineRunning && !pipelinePaused && !state.concept && !pipelineStartError && (
+                          <p className="text-[10px] text-slate-500">
+                            💬 Describe your project to <strong className="text-emerald-400">S</strong> first, then click Start.
+                          </p>
+                        )}
                         {!pipelineRunning && !pipelinePaused && (!state.projectDir || state.currentPhase === 'concept' || state.buildComplete) && (
                           <button onClick={() => void handleStart()} className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400">
                             {selectedRunGoal === 'plan-only' ? 'Start Plan Only' : 'Start Full Build'}

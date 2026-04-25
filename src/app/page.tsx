@@ -221,6 +221,7 @@ export default function PipelinePage() {
   const [chatInput, setChatInput] = useState('');
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
   const [pipelineStarted, setPipelineStarted] = useState(false);
+  const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -326,20 +327,26 @@ export default function PipelinePage() {
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
+    setPipelineStartError(null);
     const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode, selectedRunFinalAudit, discoveredOnly);
     if (!res?.success) {
       setPipelineStarted(false);
-      console.error('Pipeline failed to start:', res?.error || 'Unknown error');
+      const err = res?.error || 'Unknown error';
+      console.error('Pipeline failed to start:', err);
+      setPipelineStartError(err);
     }
   }
 
   async function handleResumePipeline() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
+    setPipelineStartError(null);
     const res = await resumePipeline();
     if (!res?.success) {
       setPipelineStarted(false);
-      console.error('Pipeline failed to resume:', res?.error || 'Unknown error');
+      const err = res?.error || 'Unknown error';
+      console.error('Pipeline failed to resume:', err);
+      setPipelineStartError(err);
     }
   }
 
@@ -356,6 +363,7 @@ export default function PipelinePage() {
     await resetState();
     setPipelineStarted(false);
     completionNotifiedRef.current = false;
+    setPipelineStartError(null);
     setPendingApproval(null);
     setSelectedAgent('S');
     setExpandedAgent(null);
@@ -414,7 +422,7 @@ export default function PipelinePage() {
 
   const phase = state.currentPhase;
   const progress = PHASE_PROGRESS[phase] || 0;
-  const securityModeLocked = isPipeline && (pipelineStarted || pipelineRunning || !!state.projectDir);
+  const securityModeLocked = isPipeline && (pipelineStarted || pipelineRunning || pipelinePaused);
   const activeSecurityMode = state.projectDir ? (state.securityMode || 'fast') : selectedSecurityMode;
   const activeRunGoal = state.projectDir ? (state.runGoal || 'full-build') : selectedRunGoal;
   const activeRunFinalAudit = state.projectDir ? !!state.runFinalAudit : selectedRunFinalAudit;
@@ -1029,6 +1037,21 @@ export default function PipelinePage() {
               <div className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">
                 Ask <span className="font-semibold text-emerald-400">S</span> to start, pause, continue, resume, or stop. Buttons are fallback controls, not the main workflow.
               </div>
+            )}
+            {/* Pipeline start error — shown inline so the user sees it immediately */}
+            {pipelineStartError && (
+              <div className="mb-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                <span className="font-semibold">Could not start: </span>{pipelineStartError}
+                {(pipelineStartError.includes('staging') || pipelineStartError.includes('concept')) && (
+                  <p className="mt-1 text-[10px] text-red-200/70">💬 <strong>Chat with S first:</strong> describe your project in the Supervisor panel below, then click Start.</p>
+                )}
+              </div>
+            )}
+            {/* Staging-ready hint: show when no concept has been defined yet */}
+            {isPipeline && !pipelineRunning && !pipelinePaused && !pipelineStarted && !state.concept && !pipelineStartError && (
+              <p className="mb-2 text-[10px] text-slate-500">
+                💬 <strong className="text-slate-400">Before starting:</strong> describe your project to <strong className="text-emerald-400">S</strong> (Supervisor) in the chat panel below. Once a concept is set, click Start.
+              </p>
             )}
             <div className="flex gap-2">
             {isPipeline && !pipelineRunning && !pipelinePaused && (!state.projectDir || state.currentPhase === 'concept' || state.buildComplete) && (
