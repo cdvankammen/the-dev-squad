@@ -72,7 +72,7 @@ export default function SquadPage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [rightTab, setRightTab] = useState<'next' | 'activity' | 'controls'>('next');
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [selectedModel, setSelectedModel] = useState('claude-opus-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
   const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
   const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);

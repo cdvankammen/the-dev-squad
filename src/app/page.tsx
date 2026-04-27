@@ -61,7 +61,7 @@ const MANUAL_ROLES: Record<string, string> = {
 
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [selectedModel, setSelectedModel] = useState('claude-opus-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
   const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
   const availableModelCount = modelOptions.filter((o) => !!o.value).length;

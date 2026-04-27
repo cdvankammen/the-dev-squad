@@ -1,0 +1,33 @@
+{
+  "concept": "staging session",
+  "projectDir": "/Users/stillbulldog35/Documents/personalGithub/the-dev-squad",
+  "currentPhase": "concept",
+  "pipelineStatus": "idle",
+  "selectedModel": "haiku",
+  "selectedProvider": "ccr",
+  "discoveredOnly": true,
+  "agentStatus": {
+    "A": "idle",
+    "B": "idle",
+    "C": "idle",
+    "D": "idle",
+    "E": "idle",
+    "S": "idle"
+  },
+  "activeAgent": "",
+  "events": [],
+  "sessions": {},
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "totalCostUsd": 0
+  },
+  "runtime": {
+    "activeTurn": null
+  },
+  "securityMode": "fast",
+  "runGoal": "full-build",
+  "runFinalAudit": false
+}

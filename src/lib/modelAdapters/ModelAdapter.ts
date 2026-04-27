@@ -129,6 +129,59 @@ export function collectConfiguredModelIds(): string[] {
   return Array.from(found).sort();
 }
 
+/**
+ * Convert a raw model identifier to its most human-readable form.
+ *
+ * Bedrock ARNs like:
+ *   arn:aws:bedrock:us-east-1:012345:inference-profile/global.anthropic.claude-sonnet-4-6
+ * are reduced to just:
+ *   claude-sonnet-4-6
+ *
+ * Plain model IDs (e.g. "claude-opus-4-6", "gpt-4o") are returned unchanged.
+ * Prefixed IDs ("anthropic.claude-3-5", "global.anthropic.claude-sonnet-4-6")
+ * have their prefix stripped.
+ */
+export function normalizeModelId(id: string): string {
+  const lower = id.toLowerCase();
+
+  // Full Bedrock ARN  →  extract model short name from the trailing segment
+  if (lower.startsWith('arn:aws:bedrock:')) {
+    const arnMatch = id.match(
+      /(?:inference-profile|foundation-model|application-inference-profile)\/(?:global\.|us\.|eu\.|ap\.)?anthropic\.(claude[-\w]+)/i,
+    );
+    if (arnMatch) return arnMatch[1];
+    // Fallback: last path segment after last '/' that contains 'claude'
+    const segments = id.split('/');
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i];
+      const dotIdx = seg.lastIndexOf('.');
+      if (dotIdx >= 0 && /claude/i.test(seg)) return seg.slice(dotIdx + 1);
+      if (/claude/i.test(seg)) return seg;
+    }
+  }
+
+  // Dot-prefixed IDs like "global.anthropic.claude-sonnet-4-6" or "anthropic.claude-3-5"
+  if (/^(?:global\.|us\.|eu\.|ap\.)?anthropic\.(claude[-\w]+)/i.test(id)) {
+    return id.replace(/^(?:global\.|us\.|eu\.|ap\.)?anthropic\./i, '');
+  }
+
+  return id;
+}
+
+/**
+ * Normalize and deduplicate a collection of model IDs.
+ * Any Bedrock ARNs or dot-prefixed IDs are converted to their short form,
+ * then the set is deduplicated (keeping only one entry per unique short name).
+ */
+export function normalizeModelIds(ids: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const normalized = normalizeModelId(raw);
+    if (normalized) seen.add(normalized);
+  }
+  return Array.from(seen).sort();
+}
+
 export function extractLikelyModelIds(text: string): string[] {
   const found = new Set<string>();
   const tokens = text.match(/[A-Za-z0-9:./_\-]{2,}/g) || [];

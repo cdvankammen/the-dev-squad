@@ -8,6 +8,7 @@ import {
   commandExists,
   extractLikelyModelIds,
   ModelAdapter,
+  normalizeModelIds,
   spawnLocal,
 } from './ModelAdapter';
 
@@ -110,7 +111,8 @@ export class ClaudeCodeRouterAdapter implements ModelAdapter {
 
   async discoverModels(): Promise<string[]> {
     const cmd = this.resolveCommand();
-    const found = new Set<string>(collectConfiguredModelIds());
+    // Seed with any models declared in claude settings / env — normalize away Bedrock ARNs.
+    const found = new Set<string>(normalizeModelIds(collectConfiguredModelIds()));
 
     // Primary: read CCR's config.json directly — this is the most reliable source
     // because CCR does not expose a machine-readable --list-models CLI flag.

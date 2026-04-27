@@ -1,7 +1,7 @@
 Overview — Architecture Deep Dive
 =================================
 
-**Last updated: 2026-04-25** (multi-provider LLM integration + dual LM Studio hosts)
+**Last updated: 2026-05-23** (model propagation fix + pipeline-control helper exports)
 
 Summary
 -------
@@ -111,3 +111,36 @@ Quick references (where to look)
 - Claude-related scripts: `scripts/probe-auth.sh` and `.claude` templates copied by `src/lib/pipeline-control.ts`
 - Provider adapters: `src/lib/modelAdapters/` — each provider has its own adapter file
 - Full provider test: `scripts/test-all-providers.mjs` — runs live model discovery for all 9 providers
+
+Model Propagation Fix (May 2026)
+---------------------------------
+Resolved the `selectedModel: None` bug that caused all 5 pipeline agents (A–E) to always run
+with the DEFAULT_MODEL (`claude-opus-4-6`) regardless of user selection.
+
+**Root causes fixed:**
+
+1. **`pipeline/orchestrator.ts` — `PipelineState` interface** (lines 226–227):
+   Added `selectedModel?: string` and `selectedProvider?: string` to the typed interface.
+   Previously the fields were accessed as `(state as any).selectedModel` — always `undefined`
+   because they were never copied into the explicitly-initialised state object.
+
+2. **`pipeline/orchestrator.ts` — state initialisation** (resume path ~line 258, fresh-start ~line 307):
+   Both paths now explicitly copy `selectedModel`/`selectedProvider` from the parsed JSON.
+   Fresh-start path uses `existingSelectedModel`/`existingSelectedProvider` local vars first.
+
+3. **`pipeline/orchestrator.ts` — stale agent status on crash** (`run().catch()`):
+   Any agents left at `'active'` or `'working'` are reset to `'idle'` before the failure state
+   is flushed.  Prevents UI from showing permanently-spinning agents after a crashed run.
+
+4. **`src/lib/pipeline-control.ts` — `setStopAfterReview` declaration lost** (~line 225):
+   The function body was accidentally orphaned (missing `export function ...{` header) in a
+   prior edit.  Declaration re-added; TypeScript now clean (TSC: 0 errors).
+
+5. **`src/lib/pipeline-control.ts` — new programmatic exports** (lines 444–499):
+   - `createStagingSession(projectDir, opts)` — writes a minimal pipeline-events.json for tests
+   - `resetPipelineState(projectDir)` — deletes pipeline-events.json (test teardown)
+   - `loadPipelineState(projectDir)` — alias for `readPipelineState` (test assertion helper)
+   These are required by `scripts/test-pipeline-provider-selection.mjs`.
+
+**Verified:** `npx tsc --noEmit` ✅ and all 10 test scripts ✅ as of 2026-05-23.
+

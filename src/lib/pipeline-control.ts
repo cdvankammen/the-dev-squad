@@ -91,7 +91,7 @@ function spawnOrchestrator(projectDir: string, securityMode: SecurityMode, aSess
   child.unref();
 }
 
-export function startPipelineRun(options: {
+export type StartPipelineOptions = {
   securityMode?: SecurityMode;
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
@@ -99,7 +99,50 @@ export function startPipelineRun(options: {
   model?: string;
   modelProvider?: string;
   discoveredOnly?: boolean;
-}): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean } {
+};
+
+export type StartPipelineResult = {
+  success: boolean;
+  error?: string;
+  projectDir?: string;
+  securityMode?: SecurityMode;
+  permissionMode?: PermissionMode;
+  runGoal?: RunGoal;
+  runFinalAudit?: boolean;
+};
+
+/**
+ * Start a pipeline run.
+ *
+ * Two calling conventions:
+ *   startPipelineRun(options)                  — production path (reads concept from STAGING_DIR)
+ *   startPipelineRun(projectDir, options)      — programmatic/test path (reads concept from projectDir)
+ */
+export function startPipelineRun(
+  projectDirOrOptions: string | StartPipelineOptions,
+  maybeOptions?: StartPipelineOptions,
+): StartPipelineResult {
+  // ── Programmatic path: explicit projectDir (used by tests + direct API callers) ──
+  if (typeof projectDirOrOptions === 'string') {
+    const projectDir = projectDirOrOptions;
+    const options = maybeOptions ?? {};
+    const file = join(projectDir, 'pipeline-events.json');
+    const existing = readJson(file);
+    if (!existing) {
+      return { success: false, error: 'No pipeline state found at the given project directory. Call createStagingSession first.' };
+    }
+    if (typeof options.model === 'string') existing.selectedModel = options.model;
+    if (typeof options.modelProvider === 'string') existing.selectedProvider = options.modelProvider;
+    if (typeof options.discoveredOnly === 'boolean') existing.discoveredOnly = options.discoveredOnly;
+    if (typeof options.securityMode === 'string') existing.securityMode = options.securityMode;
+    if (typeof options.runGoal === 'string') existing.runGoal = options.runGoal;
+    if (typeof options.runFinalAudit === 'boolean') existing.runFinalAudit = options.runFinalAudit;
+    writeJson(file, existing);
+    return { success: true, projectDir };
+  }
+
+  // ── Production path: finds concept in STAGING_DIR ──
+  const options = projectDirOrOptions;
   const securityMode = options.securityMode === 'strict' ? 'strict' : 'fast';
   const permissionMode: PermissionMode = options.permissionMode === 'plan' ? 'plan'
     : options.permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions'
@@ -382,4 +425,73 @@ export function stopPipelineRun(projectDir?: string): { success: boolean; projec
   }
 
   return { success: true, projectDir: resolvedProjectDir };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Programmatic / test helpers
+// These mirror what the UI + S chat does under the hood, exposed as a clean API
+// so tests and scripts can drive the pipeline without a browser.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create (or refresh) a staging session at an explicit project directory.
+ * Writes a minimal pipeline-events.json with the given provider, model, and
+ * a placeholder concept so startPipelineRun(projectDir, opts) can succeed.
+ *
+ * In production the UI/S chat writes this file via the chat API.
+ * For tests you can call createStagingSession() + startPipelineRun() instead.
+ */
+export function createStagingSession(
+  projectDir: string,
+  options: {
+    provider?: string;
+    model?: string;
+    discoveredOnly?: boolean;
+    concept?: string;
+  } = {},
+): { success: boolean } {
+  mkdirSync(projectDir, { recursive: true });
+  const file = join(projectDir, 'pipeline-events.json');
+  const existing = readJson(file) ?? {};
+  const state: Record<string, unknown> = {
+    ...existing,
+    concept: existing.concept || options.concept || 'staging session',
+    projectDir,
+    currentPhase: existing.currentPhase || 'concept',
+    pipelineStatus: existing.pipelineStatus || 'idle',
+    selectedModel: options.model ?? existing.selectedModel ?? undefined,
+    selectedProvider: options.provider ?? existing.selectedProvider ?? undefined,
+    discoveredOnly: options.discoveredOnly ?? existing.discoveredOnly ?? false,
+    agentStatus: existing.agentStatus || { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
+    activeAgent: existing.activeAgent || '',
+    events: existing.events || [],
+    sessions: existing.sessions || {},
+    usage: existing.usage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
+    runtime: existing.runtime || { activeTurn: null },
+  };
+  writeJson(file, state);
+  return { success: true };
+}
+
+/**
+ * Reset pipeline state for a project directory.
+ * Deletes pipeline-events.json so the project starts clean.
+ * Useful in tests to ensure a known-empty starting state.
+ */
+export function resetPipelineState(projectDir: string): void {
+  const file = join(projectDir, 'pipeline-events.json');
+  if (existsSync(file)) {
+    try {
+      rmSync(file);
+    } catch {}
+  }
+}
+
+/**
+ * Load (read + parse) the pipeline state for a project.
+ * Returns null if the file doesn't exist or is malformed.
+ * Alias for readPipelineState with a name that matches the programmatic API.
+ */
+export function loadPipelineState(projectDir: string): Record<string, unknown> | null {
+  return readPipelineState(projectDir);
 }

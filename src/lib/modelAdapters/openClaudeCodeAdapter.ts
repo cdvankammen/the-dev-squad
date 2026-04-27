@@ -1,4 +1,4 @@
-import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput, collectConfiguredModelIds, commandExists, extractLikelyModelIds } from './ModelAdapter';
+import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput, collectConfiguredModelIds, commandExists, normalizeModelIds } from './ModelAdapter';
 
 /** Adapter for ruvnet/open-claude-code (occ) */
 export class OpenClaudeCodeAdapter implements ModelAdapter {
@@ -21,34 +21,45 @@ export class OpenClaudeCodeAdapter implements ModelAdapter {
   }
 
   async discoverModels(): Promise<string[]> {
-    const tries: string[][] = [
-      ['occ', '--list-models'],
-      ['occ', 'list-models'],
-      ['occ', 'models'],
-      ['npx', '@ruvnet/open-claude-code', '--list-models'],
-      ['npx', '@ruvnet/open-claude-code', 'list-models'],
-    ];
     const found = new Set<string>(collectConfiguredModelIds());
-    for (const t of tries) {
-      try {
-        const out = await captureCommandOutput(t[0], t.slice(1), { timeoutMs: 2500 });
-        if (!out) continue;
 
-        try {
-          const parsed = JSON.parse(out);
-          if (Array.isArray(parsed)) {
-            for (const v of parsed) if (typeof v === 'string') found.add(v);
-            continue;
-          }
-        } catch {}
+    // occ (open-claude-code) launches an interactive REPL when called without a
+    // structured sub-command, so we cannot use the pattern of multiple CLI probes.
+    // Instead we run it ONCE with no arguments: stdin is closed (ignored) so it
+    // reads EOF and exits after printing a short startup banner.  We extract the
+    // configured Bedrock model from that banner and convert the ARN to a readable
+    // claude model ID.
+    try {
+      const banner = await captureCommandOutput('occ', [], { timeoutMs: 4000 });
+      if (banner) {
+        const arnMatch = banner.match(/(arn:aws:bedrock:[^\s|]+)/i);
+        if (arnMatch) {
+          const arn = arnMatch[1];
+          // Turn  "...inference-profile/global.anthropic.claude-sonnet-4-6"  → "claude-sonnet-4-6"
+          const modelMatch = arn.match(/(?:anthropic\.|global\.anthropic\.)(claude[-\w]+)/i);
+          if (modelMatch) found.add(modelMatch[1]);
+        }
+      }
+    } catch { /* occ not on PATH */ }
 
-        for (const token of extractLikelyModelIds(out)) found.add(token);
-      } catch {
-        /* ignore */
+    // Check environment variables that occ / Bedrock may use for model selection.
+    for (const key of ['ANTHROPIC_BEDROCK_MODEL', 'AWS_BEDROCK_MODEL', 'OCC_MODEL']) {
+      const val = process.env[key];
+      if (typeof val === 'string' && val.trim()) {
+        // If the env var is an ARN, extract the readable name instead of the raw ARN.
+        const arnMatch = val.trim().match(/(?:anthropic\.|global\.anthropic\.)(claude[-\w]+)/i);
+        found.add(arnMatch ? arnMatch[1] : val.trim());
       }
     }
 
-    return Array.from(found).sort();
+    // Always include the standard Bedrock-available claude models so the dropdown
+    // is never empty.
+    for (const m of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']) {
+      found.add(m);
+    }
+
+    // Normalise: convert any Bedrock ARNs / dot-prefixed IDs to short names.
+    return normalizeModelIds(found);
   }
 }
 

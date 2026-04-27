@@ -1,0 +1,13 @@
+────────────────────────────────────────────────────────────────────────────────
+ ▐▛███▜▌   Claude Code · the-dev-squad
+▝▜█████▛▘  2026-04-27 20:43 · Branch: cli-changes
+  ▘▘ ▝▝    Session: 28923c9c
+────────────────────────────────────────────────────────────────────────────────
+
+❯ Say hello in 5 words
+
+⏺ API Error (llama3.2:latest): 400 The provided model identifier is invalid..
+  Run --model to pick a different model.
+
+────────────────────────────────────────────────────────────────────────────────
+

@@ -518,6 +518,10 @@ async function handlePipeline(
           permissionMode: effectivePermissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
           runGoal: effectiveRunGoal,
           runFinalAudit: effectiveRunFinalAudit,
+          // Forward the model/provider the user has selected in the UI so every
+          // agent in the pipeline uses that selection — not the system default.
+          model: typeof model === 'string' ? model : undefined,
+          modelProvider: typeof modelProvider === 'string' ? modelProvider : undefined,
         });
 
         if (!result.success) {

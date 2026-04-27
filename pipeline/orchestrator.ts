@@ -221,6 +221,10 @@ interface PipelineState {
   auditFindings?: AuditFinding[];
   auditDeployPending?: boolean;
   auditActionInFlight?: boolean;
+  // User-selected model & provider — written by pipeline-control.ts into pipeline-events.json
+  // and forwarded here so every agent uses the same model the user picked in the UI.
+  selectedModel?: string;
+  selectedProvider?: string;
 }
 
 const eventsFile = join(projectDir, 'pipeline-events.json');
@@ -250,6 +254,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditFindings: Array.isArray(existing.auditFindings) ? existing.auditFindings : [],
     auditDeployPending: existing.auditDeployPending === true,
     auditActionInFlight: existing.auditActionInFlight === true,
+    // Preserve user-selected model/provider written by pipeline-control.ts
+    selectedModel: typeof existing.selectedModel === 'string' ? existing.selectedModel : undefined,
+    selectedProvider: typeof existing.selectedProvider === 'string' ? existing.selectedProvider : undefined,
   };
 } else {
   // Fresh start — but preserve any existing events (concept-phase conversation)
@@ -259,6 +266,8 @@ if (resumingExistingProject && existsSync(eventsFile)) {
   let existingRunGoal = 'full-build';
   let existingStopAfterPhase = 'none';
   let existingRunFinalAudit = false;
+  let existingSelectedModel: string | undefined;
+  let existingSelectedProvider: string | undefined;
   if (existsSync(eventsFile)) {
     try {
       const existing = JSON.parse(readFileSync(eventsFile, 'utf8'));
@@ -269,6 +278,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
       existingStopAfterPhase = existing.stopAfterPhase || existingStopAfterPhase;
       existingRunFinalAudit = existing.runFinalAudit === true;
       if (existing.securityMode === 'strict') securityMode = 'strict';
+      // Preserve user-selected model/provider from staging state
+      if (typeof existing.selectedModel === 'string') existingSelectedModel = existing.selectedModel;
+      if (typeof existing.selectedProvider === 'string') existingSelectedProvider = existing.selectedProvider;
     } catch {}
   }
   state = {
@@ -292,6 +304,8 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditFindings: [],
     auditDeployPending: false,
     auditActionInFlight: false,
+    selectedModel: existingSelectedModel,
+    selectedProvider: existingSelectedProvider,
   };
 }
 
@@ -465,13 +479,13 @@ async function runClaudeTurn(
       pipelineDir: BUILDUI_DIR,
       // Prefer an explicit selection saved in the pipeline state (selectedModel),
       // otherwise fall back to DEFAULT_MODEL.
-      model: (state as any).selectedModel || DEFAULT_MODEL,
+      model: state.selectedModel || DEFAULT_MODEL,
       roleFile: opts.role,
       resume: opts.resume,
       jsonSchema: opts.jsonSchema,
       effort,
       pipelineAgent: agent,
-      modelProvider: (state as any).selectedProvider || undefined,
+      modelProvider: state.selectedProvider || undefined,
       securityMode: state.securityMode,
       templateFiles: agent === 'A'
         ? [
@@ -1856,6 +1870,15 @@ async function run() {
 run().catch((err) => {
   try {
     setPipelineStatus('failed');
+    // Reset any agents left in 'active' state so the UI doesn't show stale indicators.
+    for (const agent of Object.keys(state.agentStatus)) {
+      if (state.agentStatus[agent] === 'active' || state.agentStatus[agent] === 'working') {
+        state.agentStatus[agent] = 'idle';
+      }
+    }
+    state.activeAgent = '';
+    if (state.runtime?.activeTurn) state.runtime.activeTurn = null;
+    flush();
     emitSupervisor(state.currentPhase || 'concept', `The run failed in ${state.currentPhase || 'concept'}. Ask me what happened and I can help decide whether to resume, stop, or reset.`);
   } catch {}
   console.error('\n[FATAL]', err.message);
