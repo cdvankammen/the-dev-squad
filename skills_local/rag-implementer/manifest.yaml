@@ -80,9 +80,6 @@ dependencies:
     - vector-database-mcp
     - embedding-generator-mcp
     - document-parser-mcp
-  tools:
-    - skill.rag-implementer.similarity-search
-    - skill.rag-implementer.embedding
   skills:
     - knowledge-base-manager
     - performance-optimizer

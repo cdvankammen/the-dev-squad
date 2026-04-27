@@ -87,6 +87,10 @@ export default function SquadPage() {
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
 
+  // Per-agent model overrides — lets users assign different models to different agents
+  const [agentModels, setAgentModels] = useState<Record<string, string>>({});
+  const [showPerAgentModels, setShowPerAgentModels] = useState(false);
+
   // Endpoint config for HTTP-based providers
   const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
   const [endpointHost, setEndpointHost] = useState('localhost');
@@ -108,7 +112,7 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, agentModels: Object.keys(agentModels).length > 0 ? agentModels : undefined });
 
   useEffect(() => {
     (async () => {
@@ -130,7 +134,13 @@ export default function SquadPage() {
     } catch {}
   }, []);
 
-  const toModelOptions = (models: string[]) => models.map((m) => ({ value: m, label: m }));
+  const toModelOptions = (models: string[], details?: Array<{ model: string; label: string }>) => {
+    if (details && details.length > 0) {
+      // Use enriched labels that include host info
+      return details.map((d) => ({ value: d.model, label: d.label }));
+    }
+    return models.map((m) => ({ value: m, label: m }));
+  };
 
   const fallbackOptionsForProvider = (providerId: string) => {
     const fallback = PROVIDER_FALLBACK_MODELS[providerId] || [];
@@ -177,7 +187,8 @@ export default function SquadPage() {
   }
 
   async function fetchModelsForProvider(providerId: string) {    try {
-      const res = await fetch(`/api/models?provider=${encodeURIComponent(providerId)}`, { cache: 'no-store' });
+      const detailsParam = providerId === 'ccr' ? '&details=true' : '';
+      const res = await fetch(`/api/models?provider=${encodeURIComponent(providerId)}${detailsParam}`, { cache: 'no-store' });
       if (!res.ok) {
         const fallbackOptions = fallbackOptionsForProvider(providerId);
         setModelOptions(fallbackOptions);
@@ -190,13 +201,14 @@ export default function SquadPage() {
       const list = Array.isArray(data?.models)
         ? data.models.filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0)
         : [];
+      const details = Array.isArray(data?.modelDetails) ? data.modelDetails : undefined;
       const usedDiscovery = Boolean(data?.usedDiscovery);
       const fallbackUsed = Boolean(data?.fallbackUsed);
 
       setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
 
       if (list.length > 0) {
-        const opts = toModelOptions(list);
+        const opts = toModelOptions(list, details);
         setModelOptions(opts);
         if (!list.includes(selectedModel)) setSelectedModel(list[0]);
         return;
@@ -501,6 +513,53 @@ export default function SquadPage() {
                     <p className="text-[9px] text-slate-500">
                       Pipeline agents will use this provider &amp; model. Locks when pipeline starts.
                     </p>
+                  )}
+
+                  {/* Per-agent model overrides */}
+                  {isPipeline && !securityModeLocked && availableModelCount > 1 && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setShowPerAgentModels(!showPerAgentModels)}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 underline"
+                      >
+                        {showPerAgentModels ? '▾ Hide per-agent models' : '▸ Per-agent model overrides'}
+                      </button>
+                      {showPerAgentModels && (
+                        <div className="mt-2 space-y-1.5 rounded-lg border border-white/5 bg-white/[0.02] p-2">
+                          <p className="text-[9px] text-slate-500 mb-1">
+                            Optionally assign a different model to each agent. Leave as &quot;Default&quot; to use the pipeline model above.
+                          </p>
+                          {(['A', 'B', 'C', 'D', 'E'] as const).map((agent) => (
+                            <div key={agent} className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-slate-400 w-4">{agent}</span>
+                              <select
+                                value={agentModels[agent] || ''}
+                                onChange={(e) => {
+                                  setAgentModels((prev) => {
+                                    const next = { ...prev };
+                                    if (e.target.value) {
+                                      next[agent] = e.target.value;
+                                    } else {
+                                      delete next[agent];
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                title={`Model for Agent ${agent}`}
+                                className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-300 focus:border-blue-600 focus:outline-none"
+                              >
+                                <option value="" className="bg-[#121522]">Default ({selectedModel})</option>
+                                {modelOptions.filter((o) => !!o.value).map((opt) => (
+                                  <option key={opt.value} value={opt.value} className="bg-[#121522]">
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

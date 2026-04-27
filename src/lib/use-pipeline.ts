@@ -112,6 +112,7 @@ interface UsePipelineOptions {
   mode: AppMode;
   model: string;
   provider?: string;
+  agentModels?: Record<string, string>;
 }
 
 interface SendChatOptions {
@@ -121,7 +122,7 @@ interface SendChatOptions {
   runFinalAudit?: boolean;
 }
 
-export function usePipelineState({ pollInterval = 400, mode, model, provider }: UsePipelineOptions) {
+export function usePipelineState({ pollInterval = 400, mode, model, provider, agentModels }: UsePipelineOptions) {
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 
@@ -199,10 +200,11 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider }: 
         model,
         modelProvider: provider,
         discoveredOnly: discoveredOnly === true,
+        agentModels,
       }),
     });
     return res.json();
-  }, [model, provider]);
+  }, [model, provider, agentModels]);
 
   const resumePipeline = useCallback(async () => {
     const res = await fetch('/api/resume-pipeline', {

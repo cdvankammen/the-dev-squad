@@ -23,12 +23,97 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import os from 'node:os';
 
 // ── Configuration ───────────────────────────────────────────────────
 
 const MAX_AGENT_TURNS = parseInt(process.env.HTTP_SHIM_MAX_TURNS || '30', 10);
 const TOOL_OUTPUT_LIMIT = parseInt(process.env.HTTP_SHIM_TOOL_OUTPUT_LIMIT || '12000', 10);
 const BASH_TIMEOUT_MS = parseInt(process.env.HTTP_SHIM_BASH_TIMEOUT_MS || '60000', 10);
+const SESSION_DIR = path.join(os.homedir(), '.dev-squad-sessions');
+const MAX_SESSION_CHARS = parseInt(process.env.HTTP_SHIM_MAX_SESSION_CHARS || '24000', 10);
+
+// ── Session persistence (enables --resume across orchestrator calls) ────
+
+/**
+ * Save the full conversation history to disk so a future --resume call
+ * can restore context. This is what enables Agent A→B→C→D→E continuity
+ * when using local models via the http-runner-shim.
+ */
+function saveSession(sessionId, messages) {
+  try {
+    fs.mkdirSync(SESSION_DIR, { recursive: true });
+    const file = path.join(SESSION_DIR, `${sessionId}.json`);
+    fs.writeFileSync(file, JSON.stringify({
+      sessionId,
+      messages,
+      updatedAt: new Date().toISOString(),
+      messageCount: messages.length,
+    }));
+    debug(`Saved session ${sessionId} (${messages.length} messages)`);
+  } catch (err) {
+    debug(`Failed to save session ${sessionId}: ${err.message}`);
+  }
+}
+
+/**
+ * Load a previously saved session from disk.
+ * Returns { sessionId, messages, updatedAt } or null if not found.
+ */
+function loadSession(sessionId) {
+  try {
+    const file = path.join(SESSION_DIR, `${sessionId}.json`);
+    if (!fs.existsSync(file)) {
+      debug(`Session file not found: ${file}`);
+      return null;
+    }
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    debug(`Loaded session ${sessionId} (${data.messages?.length || 0} messages)`);
+    return data;
+  } catch (err) {
+    debug(`Failed to load session ${sessionId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Trim session context to fit within a model's context window.
+ * Keeps the system prompt (first message) + the most recent messages.
+ * Drops the oldest non-system messages when total exceeds maxChars.
+ */
+function trimSessionContext(messages, maxChars = MAX_SESSION_CHARS) {
+  const total = messages.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+  if (total <= maxChars) return messages;
+
+  debug(`Session context ${total} chars exceeds limit ${maxChars}, trimming...`);
+
+  // Separate system prompt from conversation
+  const system = messages[0]?.role === 'system' ? [messages[0]] : [];
+  const rest = messages[0]?.role === 'system' ? messages.slice(1) : [...messages];
+  const systemSize = system.reduce((s, m) => s + JSON.stringify(m).length, 0);
+  const budget = maxChars - systemSize;
+
+  // Keep messages from the end (most recent first)
+  const kept = [];
+  let size = 0;
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const msgSize = JSON.stringify(rest[i]).length;
+    if (size + msgSize > budget && kept.length > 0) break;
+    kept.unshift(rest[i]);
+    size += msgSize;
+  }
+
+  const dropped = rest.length - kept.length;
+  if (dropped > 0) {
+    debug(`Trimmed ${dropped} older messages from session context`);
+    kept.unshift({
+      role: 'user',
+      content: `[System note: ${dropped} earlier messages were trimmed to fit the context window. The conversation continues from the most recent context.]`,
+    });
+  }
+
+  return [...system, ...kept];
+}
 
 // ── Emit stream-json events (orchestrator-compatible) ───────────────
 
@@ -64,6 +149,7 @@ function parseArgs(argv) {
     verbose: false,
     permissionMode: '',
     jsonSchema: null,
+    resume: '',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -121,6 +207,11 @@ function parseArgs(argv) {
         break;
       case '--json-schema':
         try { parsed.jsonSchema = JSON.parse(argv[i + 1] || '{}'); } catch { /* ignore */ }
+        i += 1;
+        break;
+      case '--resume':
+      case '-r':
+        parsed.resume = argv[i + 1] || '';
         i += 1;
         break;
       default:
@@ -240,6 +331,72 @@ function truncateOutput(text, limit = TOOL_OUTPUT_LIMIT) {
   if (text.length <= limit) return text;
   const half = Math.floor(limit / 2) - 50;
   return `${text.slice(0, half)}\n\n... [truncated ${text.length - limit} chars] ...\n\n${text.slice(-half)}`;
+}
+
+// ── Text-based tool calling fallback ────────────────────────────────
+// Some small models don't use the function calling API but still try to
+// invoke tools by writing them in their text response. This parser
+// extracts tool calls from patterns like:
+//   Read({"file_path": "src/index.ts"})
+//   ```tool_call\n{"name": "Read", "arguments": {"file_path": "..."}}\n```
+//   <tool_call>{"name": "Bash", "arguments": {"command": "ls"}}</tool_call>
+
+function parseToolCallsFromText(text) {
+  const calls = [];
+  if (!text) return calls;
+
+  // Pattern 1: ToolName({"key": "value"})
+  const funcPattern = /\b(Read|Write|Edit|Bash|Glob|Grep)\s*\(\s*(\{[\s\S]*?\})\s*\)/g;
+  let match;
+  while ((match = funcPattern.exec(text)) !== null) {
+    try {
+      const args = JSON.parse(match[2]);
+      calls.push({
+        id: `text-tool-${crypto.randomUUID()}`,
+        function: { name: match[1], arguments: JSON.stringify(args) },
+      });
+    } catch { /* skip malformed JSON */ }
+  }
+  if (calls.length > 0) return calls;
+
+  // Pattern 2: ```tool_call\n{...}\n``` or <tool_call>{...}</tool_call>
+  const blockPattern = /(?:```tool_call\s*\n([\s\S]*?)\n```|<tool_call>([\s\S]*?)<\/tool_call>)/g;
+  while ((match = blockPattern.exec(text)) !== null) {
+    try {
+      const raw = JSON.parse(match[1] || match[2]);
+      if (raw.name && raw.arguments) {
+        calls.push({
+          id: `text-tool-${crypto.randomUUID()}`,
+          function: {
+            name: raw.name,
+            arguments: typeof raw.arguments === 'string'
+              ? raw.arguments
+              : JSON.stringify(raw.arguments),
+          },
+        });
+      }
+    } catch { /* skip malformed JSON */ }
+  }
+  if (calls.length > 0) return calls;
+
+  // Pattern 3: JSON object with "tool" or "name" field in the text
+  const jsonPattern = /\{[^{}]*"(?:tool|name)"\s*:\s*"(Read|Write|Edit|Bash|Glob|Grep)"[^{}]*\}/g;
+  while ((match = jsonPattern.exec(text)) !== null) {
+    try {
+      const raw = JSON.parse(match[0]);
+      const name = raw.tool || raw.name;
+      const args = raw.arguments || raw.input || raw.params || {};
+      calls.push({
+        id: `text-tool-${crypto.randomUUID()}`,
+        function: {
+          name,
+          arguments: typeof args === 'string' ? args : JSON.stringify(args),
+        },
+      });
+    } catch { /* skip */ }
+  }
+
+  return calls;
 }
 
 function resolvePath(filePath) {
@@ -370,18 +527,41 @@ async function agentLoop(parsed) {
     process.env.LM_STUDIO_MODEL ||
     (isLmStudio ? 'local-model' : isOllama ? 'llama3.2' : 'gpt-4o-mini');
 
-  const sessionId = `http-${crypto.randomUUID()}`;
+  // ── Session resume support ──────────────────────────────────────
+  // If --resume SESSION_ID was passed, load the saved conversation history.
+  // This enables multi-turn agent continuity across orchestrator calls —
+  // Agent A can plan, resume to refine, and Agents B→E get their own
+  // persistent sessions too.
+  let sessionId;
+  let messages = [];
+  let resumed = false;
+
+  if (parsed.resume) {
+    const saved = loadSession(parsed.resume);
+    if (saved?.messages && saved.messages.length > 0) {
+      sessionId = parsed.resume;
+      messages = trimSessionContext(saved.messages, MAX_SESSION_CHARS);
+      resumed = true;
+      debug(`Resumed session ${sessionId} with ${messages.length} messages (original: ${saved.messages.length})`);
+    } else {
+      debug(`Resume requested for ${parsed.resume} but no saved session found — starting fresh`);
+      sessionId = parsed.resume; // keep the requested ID even if no history found
+    }
+  }
+
+  if (!sessionId) {
+    sessionId = `http-${crypto.randomUUID()}`;
+  }
+
   emit({ type: 'system', session_id: sessionId });
 
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  // Build initial messages
-  const messages = [];
-
-  if (parsed.systemPrompt) {
-    // Enhance system prompt with tool-usage instructions for local models
-    const toolInstructions = `
+  // Build initial messages (only if NOT resuming with existing history)
+  if (!resumed) {
+    if (parsed.systemPrompt) {
+      const toolInstructions = `
 
 ## Available Tools
 
@@ -396,9 +576,11 @@ You have access to these tools to complete your task:
 Use these tools to explore the codebase, make changes, and verify your work.
 When your task is complete, provide a clear summary of what you did.`;
 
-    messages.push({ role: 'system', content: parsed.systemPrompt + toolInstructions });
+      messages.push({ role: 'system', content: parsed.systemPrompt + toolInstructions });
+    }
   }
 
+  // Always add the new user prompt (this is the new task for this turn)
   messages.push({ role: 'user', content: parsed.prompt || 'Please respond briefly.' });
 
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -497,7 +679,18 @@ When your task is complete, provide a clear summary of what you did.`;
     }
 
     // If no tool calls, we're done (model finished or doesn't support tools)
-    if (!toolCalls || toolCalls.length === 0 || !supportsTools) {
+    // BUT first try to parse tool calls from the text response — some small
+    // models write tool calls in their text instead of using function calling.
+    let effectiveToolCalls = toolCalls;
+    if ((!toolCalls || toolCalls.length === 0) && textContent && supportsTools) {
+      const parsed = parseToolCallsFromText(textContent);
+      if (parsed.length > 0) {
+        debug(`Parsed ${parsed.length} tool call(s) from text response (text-based fallback)`);
+        effectiveToolCalls = parsed;
+      }
+    }
+
+    if (!effectiveToolCalls || effectiveToolCalls.length === 0 || !supportsTools) {
       break;
     }
 
@@ -505,7 +698,7 @@ When your task is complete, provide a clear summary of what you did.`;
     const toolUseBlocks = [];
     const toolResultMessages = [];
 
-    for (const tc of toolCalls) {
+    for (const tc of effectiveToolCalls) {
       const toolName = tc.function?.name;
       let toolInput;
       try {
@@ -570,13 +763,16 @@ When your task is complete, provide a clear summary of what you did.`;
     messages.push({
       role: 'assistant',
       content: textContent || null,
-      tool_calls: toolCalls,
+      tool_calls: effectiveToolCalls,
     });
 
     // Add tool result messages to conversation history
     for (const trm of toolResultMessages) {
       messages.push(trm);
     }
+
+    // Save session after each turn for resume support
+    saveSession(sessionId, messages);
 
     // Check if the model's finish_reason indicates it's done
     if (choice.finish_reason === 'stop') {
@@ -588,6 +784,9 @@ When your task is complete, provide a clear summary of what you did.`;
     debug(`Reached max turns (${MAX_AGENT_TURNS}), ending agent loop`);
     finalResult += '\n\n[http-runner-shim] Reached maximum turn limit.';
   }
+
+  // Final save of the complete session for future --resume calls
+  saveSession(sessionId, messages);
 
   // Emit final result event
   emit({

@@ -1,7 +1,7 @@
 Overview — Architecture Deep Dive
 =================================
 
-**Last updated: 2026-05-23** (model propagation fix + pipeline-control helper exports)
+**Last updated: 2026-07-13** (http-runner-shim v2 + CCR adapter local-model bypass + per-agent/mid-run research)
 
 Summary
 -------
@@ -143,4 +143,112 @@ with the DEFAULT_MODEL (`claude-opus-4-6`) regardless of user selection.
    These are required by `scripts/test-pipeline-provider-selection.mjs`.
 
 **Verified:** `npx tsc --noEmit` ✅ and all 10 test scripts ✅ as of 2026-05-23.
+
+HTTP Runner Shim v2 — Multi-Turn Agent Loop (April 2026)
+---------------------------------------------------------
+The `scripts/http-runner-shim.mjs` was completely rewritten from a ~197-line single-shot
+script into a ~500-line multi-turn agent loop with full tool-calling support.
+
+**Problem:** Local models (Ollama, LM Studio) were treated as "manual mode" — they would
+receive a single prompt, return one text response, and exit. Agents couldn't read files,
+write code, or interact with the codebase. This made local models unable to participate
+as pipeline squad members.
+
+**Solution:** The shim now implements a complete agent loop with:
+
+| Feature | Details |
+|---------|---------|
+| Tool calling | OpenAI function calling format: Read, Write, Edit, Bash, Glob, Grep |
+| Multi-turn loop | Up to MAX_AGENT_TURNS (default 30) conversation turns |
+| Tool execution | `executeTool()` handles all tool types with safety limits |
+| System prompts | `--system-prompt-file` flag reads role files (role-a.md, role-b.md, etc.) |
+| Stream-json | Emits orchestrator-compatible events (system, assistant, user/tool_result, result) |
+| Graceful fallback | Falls back to single-shot if provider doesn't support tools (HTTP 400/422) |
+| Safety limits | TOOL_OUTPUT_LIMIT=12000 chars, BASH_TIMEOUT_MS=60000ms |
+| Debug mode | `HTTP_SHIM_DEBUG=1` env var for verbose logging |
+
+**Tested with:** Ollama `llama3.2:latest` — tool calling works (Read, Glob, Bash), system
+prompts work (model correctly identifies as Agent A Planner). Exit code 0 on success.
+
+**Dependencies:** Node.js built-ins only (crypto, fs, path, child_process, readline).
+**Backup:** `scripts/http-runner-shim.mjs.bak.YYYYMMDD_HHMMSS`
+
+CCR Adapter Local-Model Bypass (April 2026)
+--------------------------------------------
+**Problem:** `ccr code --model llama3.2:latest` fails because Claude Code CLI v2.1.119
+validates model names client-side. Non-Anthropic identifiers are rejected before any
+network request is made. Error: `"API Error: 400 The provided model identifier is invalid."`
+
+**Root causes:**
+1. Claude CLI rejects non-Anthropic model names (e.g., `llama3.2:latest`, `qwen/qwen3.5-35b-a3b`)
+2. CCR's `/v1/chat/completions` endpoint returns "Provider 'undefined' not found" (CCR bug)
+3. Model shorthands like "haiku", "sonnet", "opus" were not recognized as Anthropic models
+
+**Solution (in `src/lib/modelAdapters/claudeCodeRouterAdapter.ts`):**
+
+1. **`isAnthropicModelName(model)`** — detects full IDs (`claude-*`) and shorthands (haiku, sonnet, opus)
+2. **`findCcrProviderForModel(model)`** — looks up model in CCR config.json providers' model arrays
+3. **`readCcrRouterDefault()`** — reads CCR Router's default route as a last-resort fallback
+4. **`spawnViaHttpShim(opts, args, provider)`** — spawns http-runner-shim pointed at provider's endpoint
+
+**Flow in spawn():**
+```
+Model requested → isAnthropicModelName?
+  YES → pass to `ccr code` as normal (Claude CLI handles it)
+  NO  → findCcrProviderForModel(model)?
+    FOUND → spawnViaHttpShim (bypass ccr code entirely)
+    NOT FOUND → readCcrRouterDefault()?
+      FOUND → use Router default model/provider via spawnViaHttpShim
+      NOT FOUND → fall through to `ccr code` (will fail, error visible)
+```
+
+CCR Configuration (April 2026)
+-------------------------------
+LAN IP corrected from 192.168.1.90 to **10.2.0.90** for the lmstudio-lan provider.
+
+CCR Router routes:
+- default: lmstudio,qwen/qwen3.5-35b-a3b
+- background: ollama,llama3.2:latest
+- think: lmstudio,qwen/qwen3.5-35b-a3b
+- longContext: lmstudio,google/gemma-4-31b
+- webSearch: lmstudio,google/gemma-4-31b
+- image: lmstudio,google/gemma-4-31b
+
+Per-Agent Model Selection — Research Notes (April 2026)
+--------------------------------------------------------
+**Current state:** All 5 pipeline agents (A→B→C→D→E) use the SAME model and provider,
+set once per pipeline run via `PipelineState.selectedModel` and `PipelineState.selectedProvider`.
+
+**Architecture for per-agent selection:**
+- `PipelineState` (orchestrator.ts ~line 226) would need:
+  ```typescript
+  agentModels?: Record<PipelineAgentId, { model: string; provider: string }>;
+  ```
+- `runClaudeTurn()` (orchestrator.ts ~line 482) currently uses `state.selectedModel || DEFAULT_MODEL`.
+  Would need to check `state.agentModels?.[agent]?.model` first.
+- UI changes: `src/app/squad/page.tsx` currently has ONE model dropdown. Would need a model
+  selector per agent card, or a configuration panel.
+- API changes: `StartPipelineOptions` in pipeline-control.ts currently has `model?: string`.
+  Would need `agentModels?: Record<string, { model: string; provider: string }>`.
+
+**Feasibility:** Medium complexity. The orchestrator already receives the agent ID for each
+turn, so routing per-agent is straightforward. Main work is UI + state management.
+
+Mid-Run Provider Switching — Research Notes (April 2026)
+---------------------------------------------------------
+**Current state:** Provider and model are locked for the entire pipeline run.
+`pipeline-signal.ts` implements structured signal parsing but has no "change-provider" signal type.
+
+**Architecture for mid-run switching:**
+- The orchestrator's `claude()` function reads `state.selectedModel` and `state.selectedProvider`
+  on EVERY agent call. If these values were updated mid-run (e.g., by writing to pipeline-events.json),
+  subsequent agents would pick up the new values automatically.
+- A new API endpoint (e.g., `/api/pipeline/set-model`) could write the new model/provider to the
+  state file. The orchestrator would see the updated values on the next agent turn.
+- No new signal type needed — the orchestrator already re-reads state values per turn.
+- For immediate switching (mid-agent-turn), would need to kill the active child process and
+  re-spawn with the new provider. This is more complex and risky.
+
+**Feasibility:** Easy for between-agent switching (just update state file). Complex for
+mid-agent-turn switching (process management).
 

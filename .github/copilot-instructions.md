@@ -1,8 +1,14 @@
-<todos title="devSquadMemory embedding and importer work" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
-- [x] inspect-devsquadmemory: Inspect `devSquadMemory` contents and confirm embedding/import scripts 🔴
-- [x] verify-fallback-vectors: Verify fallback vectors file and backup presence (`devSquadMemory/workspace_vectors.jsonl` and backups) 🟡
-- [x] add-sbert-and-chroma-scripts: Add or update SBERT embedding script and Chroma import (if missing) 🟡
-- [x] provide-run-instructions: Provide run instructions and quick verification commands 🔴
+<todos title="Debug code agents and inspect devSquadMemory" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
+- [-] inspect-devsquadmemory: Inspect `devSquadMemory` contents and confirm embedding/import scripts and vectors file presence. 🔴
+  _Start by reading README_MEMORY.md, workspace_vectors.jsonl, and ingest scripts under `devSquadMemory/scripts`._
+- [ ] collect-agent-error-logs: Search repository logs and pipeline outputs for recent agent errors and stack traces. 🔴
+  _Search `logs/`, `pipeline/`, and test outputs for ERROR/Exception/Traceback entries; collect relevant files and timestamps._
+- [ ] trace-agent-responses: Analyze agent prompt/response logs to determine what the agents are responding to and why. 🟡
+  _Locate agent runtime code or adapters (pipeline/orchestrator, agent entry points) and inspect logging around requests/responses._
+- [ ] verify-monitoring-capabilities: Check codebase for monitoring, telemetry, or observability hooks and whether the assistant can monitor runtime. 🟡
+  _Look for logging frameworks, sentry/telemetry integrations, or health endpoints; note what's required to enable live monitoring._
+- [ ] propose-fixes-and-tests: Propose fixes, tests, and commands to reproduce and validate agent behavior locally. 🟡
+  _Create minimal reproducer steps, unit/e2e tests, and commands to run locally (include environment vars/requirements)._
 </todos>
 
 <<<<<<< Updated upstream

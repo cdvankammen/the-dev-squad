@@ -99,6 +99,8 @@ export type StartPipelineOptions = {
   model?: string;
   modelProvider?: string;
   discoveredOnly?: boolean;
+  /** Per-agent model overrides: { A: 'model-x', C: 'model-y', ... } */
+  agentModels?: Record<string, string>;
 };
 
 export type StartPipelineResult = {
@@ -134,6 +136,7 @@ export function startPipelineRun(
     if (typeof options.model === 'string') existing.selectedModel = options.model;
     if (typeof options.modelProvider === 'string') existing.selectedProvider = options.modelProvider;
     if (typeof options.discoveredOnly === 'boolean') existing.discoveredOnly = options.discoveredOnly;
+    if (options.agentModels && typeof options.agentModels === 'object') existing.agentModels = options.agentModels;
     if (typeof options.securityMode === 'string') existing.securityMode = options.securityMode;
     if (typeof options.runGoal === 'string') existing.runGoal = options.runGoal;
     if (typeof options.runFinalAudit === 'boolean') existing.runFinalAudit = options.runFinalAudit;
@@ -206,6 +209,7 @@ export function startPipelineRun(
   stagingState.runGoal = runGoal;
   if (typeof options.model === 'string') stagingState.selectedModel = options.model;
   if (typeof options.modelProvider === 'string') stagingState.selectedProvider = options.modelProvider;
+  if (options.agentModels && typeof options.agentModels === 'object') stagingState.agentModels = options.agentModels;
   stagingState.discoveredOnly = options.discoveredOnly === true;
   stagingState.runFinalAudit = runFinalAudit;
   stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';

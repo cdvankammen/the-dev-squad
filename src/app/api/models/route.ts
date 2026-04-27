@@ -42,17 +42,25 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const provider = (url.searchParams.get('provider') || 'claude-cli').toLowerCase();
+    const details = url.searchParams.get('details') === 'true';
 
     const adapter = getModelAdapter(provider);
     let models: string[] = [];
     let usedDiscovery = false;
     let fallbackUsed = false;
+    // Enriched model info with host labels (only for CCR with ?details=true)
+    let modelDetails: Array<{ model: string; label: string; provider: string; host: string; port: string }> | null = null;
 
     if (adapter && typeof (adapter as any).discoverModels === 'function') {
       try {
         usedDiscovery = true;
         const discovered = await (adapter as any).discoverModels();
         if (Array.isArray(discovered)) models = discovered.filter(Boolean);
+
+        // If details requested and adapter supports it, get enriched info
+        if (details && typeof (adapter as any).discoverModelsWithHosts === 'function') {
+          modelDetails = await (adapter as any).discoverModelsWithHosts();
+        }
       } catch {
         // discovery failed — fall through to fallback
       }
@@ -82,7 +90,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ provider, models, modelCount: models.length, usedDiscovery, fallbackUsed });
+    return NextResponse.json({ provider, models, modelCount: models.length, usedDiscovery, fallbackUsed, ...(modelDetails ? { modelDetails } : {}) });
   } catch (err) {
     return NextResponse.json({ provider: 'unknown', models: [], modelCount: 0, error: String(err) }, { status: 500 });
   }

@@ -20,6 +20,8 @@ export async function POST(req: NextRequest) {
     // Optional model/provider coming from UI
     var model = typeof body?.model === 'string' ? body.model : undefined;
     var modelProvider = typeof body?.modelProvider === 'string' ? body.modelProvider : undefined;
+    // Per-agent model overrides
+    var agentModels = body?.agentModels && typeof body.agentModels === 'object' ? body.agentModels : undefined;
   } catch {}
 
   if (modelProvider) {
@@ -43,6 +45,7 @@ export async function POST(req: NextRequest) {
     model,
     modelProvider,
     discoveredOnly,
+    agentModels,
   });
 
   if (!result.success) {

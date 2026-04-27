@@ -65,7 +65,53 @@ const ROLE_C = join(BUILDUI_DIR, 'role-c.md');
 const ROLE_D = join(BUILDUI_DIR, 'role-d.md');
 const ROLE_E = join(BUILDUI_DIR, 'role-e.md');
 
+// Lite role files for small/local models (shorter system prompts that fit
+// tighter context windows and are easier for 1-4B parameter models to follow)
+const ROLE_LITE: Record<string, string> = {
+  [join(BUILDUI_DIR, 'role-a.md')]: join(BUILDUI_DIR, 'role-a-lite.md'),
+  [join(BUILDUI_DIR, 'role-b.md')]: join(BUILDUI_DIR, 'role-b-lite.md'),
+  [join(BUILDUI_DIR, 'role-c.md')]: join(BUILDUI_DIR, 'role-c-lite.md'),
+  [join(BUILDUI_DIR, 'role-d.md')]: join(BUILDUI_DIR, 'role-d-lite.md'),
+  [join(BUILDUI_DIR, 'role-e.md')]: join(BUILDUI_DIR, 'role-e-lite.md'),
+};
+
 const DEFAULT_MODEL = 'claude-opus-4-6';
+
+/**
+ * Estimate whether a model is "small" (roughly ≤4B parameters) based on its
+ * name. Small models benefit from simpler role prompts and lower effort.
+ * This is heuristic — model names vary across providers.
+ */
+function isSmallModel(model: string): boolean {
+  const m = model.toLowerCase();
+  // Anthropic models are never "small" in this context
+  if (/^claude[-_]/.test(m) || ['haiku', 'sonnet', 'opus'].some((s) => m.includes(s))) {
+    return false;
+  }
+  // Look for explicit size indicators in model names
+  // e.g. "1.2b", "3b", "4b", "nano", "mini", "tiny", "small"
+  if (/\b(nano|mini|tiny|small)\b/i.test(m)) return true;
+  // Match patterns like "1.2b", "3b-", "4b_"
+  const sizeMatch = m.match(/(\d+(?:\.\d+)?)\s*b\b/);
+  if (sizeMatch) {
+    const sizeB = parseFloat(sizeMatch[1]);
+    if (sizeB <= 4) return true;
+  }
+  // Known small model families
+  if (/lfm2\.?5?-1\.2b|phi-?[23]|gemma-\d+-e\d+b|gemma-\d+n/i.test(m)) return true;
+  return false;
+}
+
+/**
+ * Pick the appropriate role file for a model. Returns the lite variant
+ * when a small model is selected and the lite file exists on disk.
+ */
+function resolveRoleFile(roleFile: string, model: string): string {
+  if (!isSmallModel(model)) return roleFile;
+  const lite = ROLE_LITE[roleFile];
+  if (lite && existsSync(lite)) return lite;
+  return roleFile;
+}
 
 // Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
@@ -225,6 +271,8 @@ interface PipelineState {
   // and forwarded here so every agent uses the same model the user picked in the UI.
   selectedModel?: string;
   selectedProvider?: string;
+  /** Per-agent model overrides: { A: 'model-x', C: 'model-y', ... } */
+  agentModels?: Record<string, string>;
 }
 
 const eventsFile = join(projectDir, 'pipeline-events.json');
@@ -257,6 +305,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     // Preserve user-selected model/provider written by pipeline-control.ts
     selectedModel: typeof existing.selectedModel === 'string' ? existing.selectedModel : undefined,
     selectedProvider: typeof existing.selectedProvider === 'string' ? existing.selectedProvider : undefined,
+    agentModels: existing.agentModels && typeof existing.agentModels === 'object' ? existing.agentModels : undefined,
   };
 } else {
   // Fresh start — but preserve any existing events (concept-phase conversation)
@@ -268,6 +317,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
   let existingRunFinalAudit = false;
   let existingSelectedModel: string | undefined;
   let existingSelectedProvider: string | undefined;
+  let existingAgentModels: Record<string, string> | undefined;
   if (existsSync(eventsFile)) {
     try {
       const existing = JSON.parse(readFileSync(eventsFile, 'utf8'));
@@ -281,6 +331,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
       // Preserve user-selected model/provider from staging state
       if (typeof existing.selectedModel === 'string') existingSelectedModel = existing.selectedModel;
       if (typeof existing.selectedProvider === 'string') existingSelectedProvider = existing.selectedProvider;
+      if (existing.agentModels && typeof existing.agentModels === 'object') existingAgentModels = existing.agentModels;
     } catch {}
   }
   state = {
@@ -306,6 +357,7 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditActionInFlight: false,
     selectedModel: existingSelectedModel,
     selectedProvider: existingSelectedProvider,
+    agentModels: existingAgentModels,
   };
 }
 
@@ -473,14 +525,17 @@ async function runClaudeTurn(
   return new Promise((resolve, reject) => {
     const safePrompt = prompt.startsWith('-') ? 'User says: ' + prompt : prompt;
     const effort = AGENT_EFFORT[agent] || 'high';
+    // Per-agent model override: if agentModels['A'] is set, use that instead of the pipeline-wide model.
+    const activeModel = state.agentModels?.[agent] || state.selectedModel || DEFAULT_MODEL;
+    const effectiveRole = resolveRoleFile(opts.role, activeModel);
     const runnerOpts = {
       prompt: safePrompt,
       projectDir,
       pipelineDir: BUILDUI_DIR,
       // Prefer an explicit selection saved in the pipeline state (selectedModel),
       // otherwise fall back to DEFAULT_MODEL.
-      model: state.selectedModel || DEFAULT_MODEL,
-      roleFile: opts.role,
+      model: activeModel,
+      roleFile: effectiveRole,
       resume: opts.resume,
       jsonSchema: opts.jsonSchema,
       effort,
