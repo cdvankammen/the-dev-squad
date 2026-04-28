@@ -483,6 +483,20 @@ async function handlePipeline(
 
   let state: Record<string, unknown> = {};
   try { state = JSON.parse(readFileSync(eventsFile, 'utf8')); } catch {}
+  // Persist any UI-provided model/provider selections into the staging/project
+  // state so the orchestrator and runners will use the user's choices at runtime.
+  try {
+    let changed = false;
+    if (typeof model === 'string' && model && (state.selectedModel !== model)) {
+      (state as any).selectedModel = model;
+      changed = true;
+    }
+    if (typeof modelProvider === 'string' && modelProvider && (state.selectedProvider !== modelProvider)) {
+      (state as any).selectedProvider = modelProvider;
+      changed = true;
+    }
+    if (changed) writeState(eventsFile, state);
+  } catch {}
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';

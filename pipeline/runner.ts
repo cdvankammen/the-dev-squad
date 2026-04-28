@@ -299,6 +299,8 @@ export function buildRunnerEnv(opts: RunnerOptions): NodeJS.ProcessEnv {
     // Reset Claude's working directory after each Bash command so a `cd`
     // does not persist into later Write/Edit tool calls.
     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: '1',
+    // Set the project directory so Claude knows where the project root is
+    CLAUDE_PROJECT_DIR: opts.projectDir,
   };
 
   if (hasValue(opts.pipelineAgent)) {
@@ -411,9 +413,31 @@ export class HostRunner implements Runner {
           return withBackend(child, 'host');
         } catch (err) {
           console.warn(`[ModelAdapter] adapter for '${provider}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; falling back to claude-cli`);
+          try {
+            const file = join(opts.projectDir, 'pipeline-events.json');
+            const raw = existsSync(file) ? readFileSync(file, 'utf8') : null;
+            if (raw) {
+              const s = JSON.parse(raw);
+              const events = Array.isArray(s.events) ? s.events : [];
+              events.push({ time: new Date().toISOString(), agent: 'S', phase: s.currentPhase || 'concept', type: 'text', text: `Requested provider '${provider}' failed to start on host; falling back to claude-cli.` });
+              s.events = events;
+              writeFileSync(file, JSON.stringify(s, null, 2));
+            }
+          } catch {}
         }
       } else {
         console.warn(`[ModelAdapter] requested provider '${provider}' not available; falling back to claude-cli`);
+        try {
+          const file = join(opts.projectDir, 'pipeline-events.json');
+          const raw = existsSync(file) ? readFileSync(file, 'utf8') : null;
+          if (raw) {
+            const s = JSON.parse(raw);
+            const events = Array.isArray(s.events) ? s.events : [];
+            events.push({ time: new Date().toISOString(), agent: 'S', phase: s.currentPhase || 'concept', type: 'text', text: `Requested provider '${provider}' is not available in this environment; falling back to claude-cli.` });
+            s.events = events;
+            writeFileSync(file, JSON.stringify(s, null, 2));
+          }
+        } catch {}
       }
     } else {
       const preferred = (process.env.PIPELINE_PREFERRED_PROVIDERS || 'occ,openclaude,claude-cli')

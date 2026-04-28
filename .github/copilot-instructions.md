@@ -1,14 +1,11 @@
-<todos title="Debug code agents and inspect devSquadMemory" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
-- [-] inspect-devsquadmemory: Inspect `devSquadMemory` contents and confirm embedding/import scripts and vectors file presence. 🔴
-  _Start by reading README_MEMORY.md, workspace_vectors.jsonl, and ingest scripts under `devSquadMemory/scripts`._
-- [ ] collect-agent-error-logs: Search repository logs and pipeline outputs for recent agent errors and stack traces. 🔴
-  _Search `logs/`, `pipeline/`, and test outputs for ERROR/Exception/Traceback entries; collect relevant files and timestamps._
-- [ ] trace-agent-responses: Analyze agent prompt/response logs to determine what the agents are responding to and why. 🟡
-  _Locate agent runtime code or adapters (pipeline/orchestrator, agent entry points) and inspect logging around requests/responses._
-- [ ] verify-monitoring-capabilities: Check codebase for monitoring, telemetry, or observability hooks and whether the assistant can monitor runtime. 🟡
-  _Look for logging frameworks, sentry/telemetry integrations, or health endpoints; note what's required to enable live monitoring._
-- [ ] propose-fixes-and-tests: Propose fixes, tests, and commands to reproduce and validate agent behavior locally. 🟡
-  _Create minimal reproducer steps, unit/e2e tests, and commands to run locally (include environment vars/requirements)._
+<todos title="Monitor and Analyze devSquad Application" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
+- [x] enable-logging: Enable maximum logging in the application 🔴
+- [x] build-code: Build the code if necessary 🔴
+- [x] examine-logs: Examine existing log files for errors and flow 🔴
+- [x] run-monitor: Run the application and monitor live outputs 🔴
+- [x] analyze-codebase: Analyze codebase for agent communication and flow 🔴
+- [x] explain-findings: Explain findings, errors, and internal workings 🔴
+- [x] save-analysis: Save comprehensive analysis to memory file 🔴
 </todos>
 
 <<<<<<< Updated upstream

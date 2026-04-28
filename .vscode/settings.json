@@ -22,5 +22,19 @@
         "**/.vexp/parent_workspace.json": true,
         "**/.vexp/.gitignore": true,
         "**/.vexp/.gitattributes": true
-    }
+    },
+    "github.copilot.chat.cli.sessionControllerForSessionsApp.enabled": true,
+    "github.copilot.chat.otel.captureContent": true,
+    "github.copilot.chat.otel.dbSpanExporter.enabled": true,
+    "github.copilot.chat.otel.enabled": true,
+    "github.copilot.chat.rateLimitAutoSwitchToAuto": false,
+    "github.copilot.chat.scopeSelection": true,
+    "github.copilot.chat.searchSubagent.useAgenticProxy": true,
+    "github.copilot.chat.agent.omitFileAttachmentContents": true,
+    "github.copilot.chat.agentDebugLog.fileLogging.enabled": true,
+    "github.copilot.chat.alternateGeminiModelFPrompt.enabled": true,
+    "github.copilot.chat.alternateGptPrompt.enabled": true,
+    "github.copilot.chat.anthropic.cacheBreakpoints.lastTwoMessages": true,
+    "github.copilot.chat.anthropic.tools.websearch.enabled": true,
+    "github.copilot.chat.cli.remote.enabled": true
 }
