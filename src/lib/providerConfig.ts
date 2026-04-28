@@ -8,7 +8,7 @@
  * and it points LM Studio at a remote host, we auto-bootstrap LM Studio's base URL
  * from CCR's config.json so the adapter works out-of-the-box.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, watch } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -80,17 +80,44 @@ const DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {
   'openai-compat': { host: 'localhost', port: 8080 },
 };
 
+let _cached: Record<string, ProviderConfig> | null = null;
+let _cachedMtime = 0;
+
+function clearProviderConfigCache() {
+  _cached = null;
+  _cachedMtime = 0;
+}
+
+// Watch the config file and invalidate the cache when it changes.
+try {
+  const configPath = join(process.cwd(), 'provider-config.json');
+  // fs.watch may throw on some platforms; ignore failures.
+  watch(configPath, { persistent: false }, () => {
+    clearProviderConfigCache();
+  });
+} catch {
+  // ignore
+}
+
 export function readProviderConfigs(): Record<string, ProviderConfig> {
   const configFile = join(process.cwd(), 'provider-config.json');
-  let saved: Record<string, ProviderConfig> = {};
-  if (existsSync(configFile)) {
-    try {
-      saved = JSON.parse(readFileSync(configFile, 'utf8')) as Record<string, ProviderConfig>;
-    } catch {
-      saved = {};
+  try {
+    if (!existsSync(configFile)) {
+      clearProviderConfigCache();
+      return {};
     }
+    const stat = statSync(configFile);
+    const mtime = stat.mtimeMs || 0;
+    if (_cached && _cachedMtime === mtime) return _cached;
+    const raw = readFileSync(configFile, 'utf8');
+    const saved = JSON.parse(raw) as Record<string, ProviderConfig>;
+    _cached = saved;
+    _cachedMtime = mtime;
+    return saved;
+  } catch {
+    clearProviderConfigCache();
+    return {};
   }
-  return saved;
 }
 
 export function getProviderConfig(id: string): ProviderConfig {

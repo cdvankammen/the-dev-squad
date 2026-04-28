@@ -24,6 +24,8 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import os from 'node:os';
+import { TOOL_DEFINITIONS, KNOWN_TOOL_NAMES, normalizeToolName, normalizeToolCalls, isKnownToolName } from './tool-registry.mjs';
+import { parsePossiblyMalformedJson } from './json-repair.mjs';
 
 // ── Configuration ───────────────────────────────────────────────────
 
@@ -85,33 +87,76 @@ function loadSession(sessionId) {
  * Drops the oldest non-system messages when total exceeds maxChars.
  */
 function trimSessionContext(messages, maxChars = MAX_SESSION_CHARS) {
-  const total = messages.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+  if (!Array.isArray(messages) || messages.length === 0) return messages || [];
+  const sizes = messages.map((m) => JSON.stringify(m).length);
+  const total = sizes.reduce((s, n) => s + n, 0);
   if (total <= maxChars) return messages;
 
-  debug(`Session context ${total} chars exceeds limit ${maxChars}, trimming...`);
+  debug(`Session context ${total} chars exceeds limit ${maxChars}, trimming with importance-preserving algorithm...`);
 
-  // Separate system prompt from conversation
+  // Always preserve the first system prompt (if any)
   const system = messages[0]?.role === 'system' ? [messages[0]] : [];
-  const rest = messages[0]?.role === 'system' ? messages.slice(1) : [...messages];
   const systemSize = system.reduce((s, m) => s + JSON.stringify(m).length, 0);
-  const budget = maxChars - systemSize;
+  const budget = Math.max(0, maxChars - systemSize);
 
-  // Keep messages from the end (most recent first)
-  const kept = [];
-  let size = 0;
-  for (let i = rest.length - 1; i >= 0; i--) {
-    const msgSize = JSON.stringify(rest[i]).length;
-    if (size + msgSize > budget && kept.length > 0) break;
-    kept.unshift(rest[i]);
-    size += msgSize;
+  // Identify protected messages (tool results or explicit tool calls)
+  const isToolResult = (msg) => {
+    if (!msg) return false;
+    if (msg.role === 'tool') return true;
+    if (msg.tool_call_id || msg.tool_call || msg.tool_calls) return true;
+    // content may be an array with typed blocks
+    if (Array.isArray(msg.content)) {
+      for (const c of msg.content) {
+        if (c && typeof c === 'object' && (c.type === 'tool_result' || c.type === 'tool_use' || c.type === 'tool')) return true;
+      }
+    }
+    // short heuristic: text containing '[Tool result' or 'tool_result'
+    if (typeof msg.content === 'string' && /tool[_ ]?result|\[Tool result/i.test(msg.content)) return true;
+    return false;
+  };
+
+  const protectedIndices = new Set();
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]?.role === 'system') continue;
+    if (isToolResult(messages[i]) || (messages[i]?.tool_calls && messages[i].tool_calls.length > 0)) {
+      protectedIndices.add(i);
+    }
   }
 
-  const dropped = rest.length - kept.length;
-  if (dropped > 0) {
-    debug(`Trimmed ${dropped} older messages from session context`);
+  // Greedily include messages from newest to oldest, but always include protected messages.
+  const keepIndices = new Set();
+  let used = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const sz = sizes[i] || JSON.stringify(messages[i]).length;
+    if (protectedIndices.has(i)) {
+      keepIndices.add(i);
+      used += sz;
+      continue;
+    }
+    if (used + sz <= budget) {
+      keepIndices.add(i);
+      used += sz;
+    } else {
+      // if we've already kept some non-protected messages, stop adding more non-protected ones
+      // but continue to pick protected ones in earlier indices
+      continue;
+    }
+  }
+
+  // Always keep system at index 0 (we'll prepend it later)
+  const kept = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (i === 0 && system.length === 1) continue; // skip system; will add once
+    if (keepIndices.has(i)) kept.push(messages[i]);
+  }
+
+  const droppedCount = messages.length - (kept.length + system.length);
+  if (droppedCount > 0) {
+    debug(`Trimmed ${droppedCount} older messages while preserving tool results`);
     kept.unshift({
       role: 'user',
-      content: `[System note: ${dropped} earlier messages were trimmed to fit the context window. The conversation continues from the most recent context.]`,
+      content: `[System note: ${droppedCount} earlier messages were summarized/trimmed to fit the context window. Tool results were preserved.]`,
     });
   }
 
@@ -255,128 +300,7 @@ function parseArgs(argv) {
   return parsed;
 }
 
-// ── Tool definitions (OpenAI function calling format) ───────────────
-
-const TOOL_DEFINITIONS = [
-  {
-    type: 'function',
-    function: {
-      name: 'Read',
-      description: 'Read the contents of a file. Use this to examine source code, configuration, documentation, or any text file.',
-      parameters: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Absolute or relative path to the file to read.' },
-        },
-        required: ['file_path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Write',
-      description: 'Write content to a file, creating it if necessary. Use this to create new files or completely replace existing file content.',
-      parameters: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Path to the file to write.' },
-          content: { type: 'string', description: 'The full content to write to the file.' },
-        },
-        required: ['file_path', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Edit',
-      description: 'Make a targeted edit to a file by replacing an exact string with a new string. The old_string must match exactly (including whitespace).',
-      parameters: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Path to the file to edit.' },
-          old_string: { type: 'string', description: 'The exact text to find and replace.' },
-          new_string: { type: 'string', description: 'The replacement text.' },
-        },
-        required: ['file_path', 'old_string', 'new_string'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Bash',
-      description: 'Run a shell command. Use this for installing packages, running tests, checking file structure, git operations, etc.',
-      parameters: {
-        type: 'object',
-        properties: {
-          command: { type: 'string', description: 'The shell command to execute.' },
-        },
-        required: ['command'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Glob',
-      description: 'Find files matching a glob pattern.',
-      parameters: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'Glob pattern to match files (e.g., "src/**/*.ts").' },
-        },
-        required: ['pattern'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Grep',
-      description: 'Search for a pattern in files.',
-      parameters: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'The text or regex pattern to search for.' },
-          path: { type: 'string', description: 'Directory or file path to search in. Defaults to current directory.' },
-        },
-        required: ['pattern'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'WebSearch',
-      description: 'Search the public web for current documentation, APIs, library usage, and reference material.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'The search query to run.' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'WebFetch',
-      description: 'Fetch the contents of a public URL for source verification or documentation lookup.',
-      parameters: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'The URL to fetch.' },
-        },
-        required: ['url'],
-      },
-    },
-  },
-];
-
-const KNOWN_TOOL_NAMES = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
+// Tool definitions and normalization are provided by ./tool-registry.mjs
 
 // ── Tool execution ──────────────────────────────────────────────────
 
@@ -406,10 +330,10 @@ function parseToolCallsFromText(text) {
     try {
       const toolName = normalizeToolName(match[1]);
       if (!KNOWN_TOOL_NAMES.includes(toolName)) continue;
-      const args = JSON.parse(match[2]);
+      const argsObj = parsePossiblyMalformedJson(match[2]);
       calls.push({
         id: `text-tool-${crypto.randomUUID()}`,
-        function: { name: toolName, arguments: JSON.stringify(args) },
+        function: { name: toolName, arguments: JSON.stringify(argsObj) },
       });
     } catch { /* skip malformed JSON */ }
   }
@@ -419,7 +343,7 @@ function parseToolCallsFromText(text) {
   const blockPattern = /(?:```tool_call\s*\n([\s\S]*?)\n```|<tool_call>([\s\S]*?)<\/tool_call>)/g;
   while ((match = blockPattern.exec(text)) !== null) {
     try {
-      const raw = JSON.parse(match[1] || match[2]);
+      const raw = parsePossiblyMalformedJson(match[1] || match[2]);
       const toolName = normalizeToolName(raw.name);
       if (toolName && raw.arguments && KNOWN_TOOL_NAMES.includes(toolName)) {
         calls.push({
@@ -440,7 +364,7 @@ function parseToolCallsFromText(text) {
   const jsonPattern = /\{[^{}]*"(?:tool|name)"\s*:\s*"([^"]+)"[^{}]*\}/g;
   while ((match = jsonPattern.exec(text)) !== null) {
     try {
-      const raw = JSON.parse(match[0]);
+      const raw = parsePossiblyMalformedJson(match[0]);
       const name = normalizeToolName(raw.tool || raw.name);
       if (!KNOWN_TOOL_NAMES.includes(name)) continue;
       const args = raw.arguments || raw.input || raw.params || {};
@@ -457,57 +381,7 @@ function parseToolCallsFromText(text) {
   return calls;
 }
 
-function normalizeToolName(name) {
-  const raw = String(name || '').trim();
-  if (!raw) return raw;
-
-  const cleaned = raw
-    .replace(/^\[TOOL_CALLS\]/i, '')
-    .replace(/^TOOL_CALLS[_:-]*/i, '')
-    .replace(/^\[+|\]+$/g, '')
-    .trim();
-
-  const lower = cleaned.toLowerCase();
-  if (lower === 'read') return 'Read';
-  if (lower === 'write') return 'Write';
-  if (lower === 'edit') return 'Edit';
-  if (lower === 'bash') return 'Bash';
-  if (lower === 'glob') return 'Glob';
-  if (lower === 'grep') return 'Grep';
-  if (lower === 'websearch') return 'WebSearch';
-  if (lower === 'webfetch') return 'WebFetch';
-
-   const canonicalMatch = lower.match(/(^|[^a-z])(read|write|edit|bash|glob|grep|websearch|webfetch)([^a-z]|$)/i);
-   if (canonicalMatch?.[2]) {
-    const canonical = canonicalMatch[2].toLowerCase();
-    if (canonical === 'read') return 'Read';
-    if (canonical === 'write') return 'Write';
-    if (canonical === 'edit') return 'Edit';
-    if (canonical === 'bash') return 'Bash';
-    if (canonical === 'glob') return 'Glob';
-    if (canonical === 'grep') return 'Grep';
-    if (canonical === 'websearch') return 'WebSearch';
-    if (canonical === 'webfetch') return 'WebFetch';
-   }
-
-  return cleaned;
-}
-
-function normalizeToolCalls(toolCalls) {
-  if (!Array.isArray(toolCalls)) return [];
-  return toolCalls.map((tc) => ({
-    ...tc,
-    function: {
-      ...(tc?.function || {}),
-      name: normalizeToolName(tc?.function?.name),
-      arguments: tc?.function?.arguments || '{}',
-    },
-  }));
-}
-
-function isKnownToolName(name) {
-  return KNOWN_TOOL_NAMES.includes(normalizeToolName(name));
-}
+// Tool normalization helpers provided by ./tool-registry.mjs
 
 function resolvePath(filePath) {
   if (path.isAbsolute(filePath)) return filePath;
@@ -866,27 +740,90 @@ async function executeTool(name, input) {
       }
 
       case 'Glob': {
-        const pattern = input.pattern;
         try {
-          // Use find or ls with glob — cross-platform approach
-          const cmd = process.platform === 'win32'
-            ? `dir /s /b "${pattern}"`
-            : `find . -path "./${pattern}" -o -name "${pattern}" 2>/dev/null | head -200`;
-          const output = execSync(cmd, { cwd: process.cwd(), encoding: 'utf8', timeout: 10000 });
-          return { is_error: false, content: truncateOutput(output || '(no matches)') };
-        } catch {
-          return { is_error: false, content: '(no matches)' };
+          const pattern = String(input.pattern || '').trim();
+          if (!pattern) return { is_error: true, content: 'Glob requires a non-empty pattern' };
+
+          // Convert simple glob to a regex (supports **, *, ?)
+          const escapeRegex = (s) => s.replace(/[.+^${}()|[\\]\\\\]/g, '\\$&');
+          let regexStr = '^' + escapeRegex(pattern)
+            .replace(/\\\*\\\*/g, '.*')
+            .replace(/\\\*/g, '[^/]*')
+            .replace(/\\\?/g, '.') + '$';
+          const re = new RegExp(regexStr);
+
+          // Walk directory and match
+          const root = process.cwd();
+          const results = [];
+          function walk(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const e of entries) {
+              const p = path.join(dir, e.name);
+              const rel = path.relative(root, p).split(path.sep).join('/');
+              if (e.isDirectory()) {
+                walk(p);
+                if (results.length >= 200) return;
+              } else {
+                if (re.test(rel)) {
+                  results.push(rel);
+                  if (results.length >= 200) return;
+                }
+              }
+            }
+          }
+          try { walk(root); } catch (err) { return { is_error: true, content: `Glob walk error: ${String(err)}` }; }
+          return { is_error: false, content: truncateOutput(results.join('\n') || '(no matches)') };
+        } catch (err) {
+          return { is_error: true, content: `Glob error: ${err.message || String(err)}` };
         }
       }
 
       case 'Grep': {
-        const searchPath = input.path ? resolvePath(input.path) : process.cwd();
         try {
-          const cmd = `grep -rn --include='*' "${input.pattern.replace(/"/g, '\\"')}" "${searchPath}" 2>/dev/null | head -100`;
-          const output = execSync(cmd, { cwd: process.cwd(), encoding: 'utf8', timeout: 15000 });
-          return { is_error: false, content: truncateOutput(output || '(no matches)') };
-        } catch {
-          return { is_error: false, content: '(no matches)' };
+          const searchPath = input.path ? resolvePath(input.path) : process.cwd();
+          const patternRaw = String(input.pattern || '');
+          if (!patternRaw) return { is_error: true, content: 'Grep requires a non-empty pattern' };
+
+          let re;
+          try {
+            re = new RegExp(patternRaw, 'i');
+          } catch {
+            // fallback to literal search
+            re = null;
+          }
+
+          const results = [];
+          function walkGrep(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const e of entries) {
+              const p = path.join(dir, e.name);
+              if (e.isDirectory()) {
+                walkGrep(p);
+                if (results.length >= 100) return;
+              } else {
+                try {
+                  const content = fs.readFileSync(p, 'utf8');
+                  const lines = content.split(/\\r?\\n/);
+                  for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    const match = re ? re.exec(line) : (line.toLowerCase().includes(patternRaw.toLowerCase()) ? [patternRaw] : null);
+                    if (match) {
+                      results.push(`${path.relative(process.cwd(), p)}:${i + 1}: ${line.trim()}`);
+                      if (results.length >= 100) break;
+                    }
+                  }
+                } catch {
+                  // skip binary or unreadable files
+                }
+                if (results.length >= 100) return;
+              }
+            }
+          }
+
+          walkGrep(searchPath);
+          return { is_error: false, content: truncateOutput(results.join('\n') || '(no matches)') };
+        } catch (err) {
+          return { is_error: true, content: `Grep error: ${err.message || String(err)}` };
         }
       }
 
@@ -1181,21 +1118,38 @@ When your task is complete, provide a clear summary of what you did.`;
 
     for (const tc of effectiveToolCalls) {
       const toolName = normalizeToolName(tc.function?.name);
-      let toolInput;
-      try {
-        toolInput = JSON.parse(tc.function?.arguments || '{}');
-      } catch {
-        toolInput = {};
-      }
       const toolUseId = tc.id || `tool-${crypto.randomUUID()}`;
 
+      // Parse/repair tool arguments before executing
+      let toolInput;
+      try {
+        toolInput = parsePossiblyMalformedJson(tc.function?.arguments || '{}');
+      } catch (err) {
+        const msg = `Invalid tool arguments for ${toolName}: ${err.message || String(err)}\nOriginal: ${String(tc.function?.arguments).slice(0, 800)}`;
+        debug(msg);
+
+        // Emit a tool_result error back to the agent so it can fix its output
+        emit({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [{
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: msg,
+              is_error: true,
+            }],
+          },
+        });
+
+        // Also add to tool result messages so the next model call sees the error
+        toolResultMessages.push({ role: 'tool', tool_call_id: toolUseId, content: msg });
+        // Skip execution of the tool since args are invalid
+        continue;
+      }
+
       // Emit tool_use event (orchestrator sees this)
-      toolUseBlocks.push({
-        type: 'tool_use',
-        id: toolUseId,
-        name: toolName,
-        input: toolInput,
-      });
+      toolUseBlocks.push({ type: 'tool_use', id: toolUseId, name: toolName, input: toolInput });
 
       // Execute the tool
       debug(`Executing tool: ${toolName}(${JSON.stringify(toolInput).slice(0, 200)})`);
@@ -1206,21 +1160,12 @@ When your task is complete, provide a clear summary of what you did.`;
         type: 'user',
         message: {
           role: 'user',
-          content: [{
-            type: 'tool_result',
-            tool_use_id: toolUseId,
-            content: toolResult.content,
-            is_error: toolResult.is_error,
-          }],
+          content: [{ type: 'tool_result', tool_use_id: toolUseId, content: toolResult.content, is_error: toolResult.is_error }],
         },
       });
 
       // Build the tool result message for the next API call
-      toolResultMessages.push({
-        role: 'tool',
-        tool_call_id: toolUseId,
-        content: toolResult.content,
-      });
+      toolResultMessages.push({ role: 'tool', tool_call_id: toolUseId, content: toolResult.content });
     }
 
     // Emit the assistant message with tool_use blocks

@@ -58,7 +58,7 @@
     "github.copilot.chat.inlineEdits.chatSessionContextProvider.enabled": true,
     "github.copilot.chat.inlineEdits.diagnosticsContextProvider.enabled": true,
     "github.copilot.chat.installExtensionSkill.enabled": true,
-    "github.copilot.chat.workspace.maxDiffSizeBeforeUsingExternalIngest": 1000,
+    "github.copilot.chat.workspace.maxDiffSizeBeforeUsingExternalIngest": 100,
     "github.copilot.chat.anthropic.thinking.budgetTokens": 32000,
     "github.copilot.chat.agentDebugLog.fileLogging.maxRetainedSessionLogs": 100,
     "github.copilot.chat.executionSubagent.toolCallLimit": 40000000,
@@ -72,10 +72,10 @@
     "github.copilot.chat.review.intent": true,
     "github.copilot.chat.searchSubagent.enabled": true,
     "github.copilot.chat.searchSubagent.thoroughnessEnabled": true,
-    "github.copilot.chat.searchSubagent.toolCallLimit": 10,
-    "github.copilot.chat.skillTool.enabled": true,
+    "github.copilot.chat.searchSubagent.toolCallLimit": 300,
+    "github.copilot.chat.skillTool.enabled": false,
     "github.copilot.chat.switchAgent.enabled": true,
-    "github.copilot.chat.tools.defaultToolsGrouped": true,
-    "github.copilot.chat.useResponsesApiTruncation": true,
+    "github.copilot.chat.tools.defaultToolsGrouped": false,
+    "github.copilot.chat.useResponsesApiTruncation": false,
     "chat.agent.maxRequests": 999999
 }
