@@ -19,12 +19,26 @@ export async function GET() {
       const adapter = getModelAdapter(p.id);
       let installedOrConfigured = false;
       let executable = false;
+      let reason: string | undefined;
       try {
-        installedOrConfigured = !!adapter && adapter.isAvailable();
-        executable = !!adapter && (typeof adapter.supportsExecution !== 'function' || adapter.supportsExecution() !== false);
-      } catch {
+        if (!adapter) {
+          installedOrConfigured = false;
+          executable = false;
+          reason = 'Provider adapter not implemented in this build.';
+        } else {
+          installedOrConfigured = Boolean(adapter.isAvailable && adapter.isAvailable());
+          try {
+            executable = typeof adapter.supportsExecution !== 'function' || adapter.supportsExecution() !== false;
+          } catch {
+            executable = false;
+          }
+          if (!installedOrConfigured) reason = 'CLI missing or endpoint unreachable.';
+          if (installedOrConfigured && !executable) reason = 'Provider is discoverable but does not support executable runner sessions.';
+        }
+      } catch (err) {
         installedOrConfigured = false;
         executable = false;
+        reason = String(err instanceof Error ? err.message : err);
       }
       return {
         id: p.id,
@@ -32,9 +46,7 @@ export async function GET() {
         available: installedOrConfigured && executable,
         installedOrConfigured,
         executable,
-        note: !executable
-          ? 'Provider is discoverable but does not support executable runner sessions.'
-          : undefined,
+        reason,
       };
     });
 

@@ -290,9 +290,11 @@ export class ClaudeCodeRouterAdapter implements ModelAdapter {
     }
 
     // In `ccr code --print` mode, passing the prompt via stdin is more reliable
-    // than positional argv forwarding.
+    // than positional argv forwarding. Only extract a trailing prompt when the
+    // args do not already include an explicit prompt flag (e.g. -p / --system-prompt).
     let promptFromArgs: string | null = null;
-    if (args.length > 0) {
+    const hasExplicitPromptFlag = args.includes('-p') || args.includes('--prompt') || args.includes('--system-prompt') || args.includes('--system-prompt-file');
+    if (!hasExplicitPromptFlag && args.length > 0) {
       const last = args[args.length - 1];
       if (typeof last === 'string' && !last.startsWith('-')) {
         promptFromArgs = last;

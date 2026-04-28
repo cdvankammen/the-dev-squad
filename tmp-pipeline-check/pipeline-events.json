@@ -1,0 +1,36 @@
+{
+  "concept": "verify persistence",
+  "projectDir": "/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tmp-pipeline-check",
+  "currentPhase": "concept",
+  "pipelineStatus": "idle",
+  "selectedModel": "test-model",
+  "selectedProvider": "lm-studio",
+  "discoveredOnly": false,
+  "agentStatus": {
+    "A": "idle",
+    "B": "idle",
+    "C": "idle",
+    "D": "idle",
+    "E": "idle",
+    "S": "idle"
+  },
+  "activeAgent": "",
+  "events": [],
+  "sessions": {},
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "totalCostUsd": 0
+  },
+  "runtime": {
+    "activeTurn": null
+  },
+  "agentModels": {
+    "A": "test-model",
+    "C": "test-model"
+  },
+  "securityMode": "fast",
+  "runGoal": "plan-only"
+}

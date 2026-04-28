@@ -409,7 +409,10 @@ export class HostRunner implements Runner {
       const adapter = getModelAdapter(provider);
       if (adapter && adapter.isAvailable()) {
         try {
-          const child = adapter.spawn({ args: buildClaudeArgs(opts), cwd: opts.projectDir, env: buildRunnerEnv(opts) });
+          const adapterArgs = buildClaudeArgs(opts);
+          // Diagnostic log: show the exact args passed to the adapter when spawning on host
+          console.debug(`[Runner] HostRunner spawning adapter '${provider}' with args: ${JSON.stringify(adapterArgs)}`);
+          const child = adapter.spawn({ args: adapterArgs, cwd: opts.projectDir, env: buildRunnerEnv(opts) });
           return withBackend(child, 'host');
         } catch (err) {
           console.warn(`[ModelAdapter] adapter for '${provider}' failed to spawn: ${err instanceof Error ? err.message : String(err)}; falling back to claude-cli`);

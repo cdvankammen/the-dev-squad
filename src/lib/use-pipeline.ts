@@ -187,21 +187,26 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, ag
     runGoal: RunGoal,
     permissionMode?: PermissionMode,
     runFinalAudit?: boolean,
-    discoveredOnly?: boolean
+    discoveredOnly?: boolean,
+    agentModelsArg?: Record<string, string>
   ) => {
+    // Allow callers to pass per-agent model overrides explicitly. If not
+    // provided, fall back to the agentModels value captured by the hook.
+    const payload: Record<string, unknown> = {
+      securityMode,
+      permissionMode,
+      runGoal,
+      runFinalAudit: runFinalAudit === true,
+      model,
+      modelProvider: provider,
+      discoveredOnly: discoveredOnly === true,
+      agentModels: agentModelsArg ?? agentModels,
+    };
+
     const res = await fetch('/api/start-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        securityMode,
-        permissionMode,
-        runGoal,
-        runFinalAudit: runFinalAudit === true,
-        model,
-        modelProvider: provider,
-        discoveredOnly: discoveredOnly === true,
-        agentModels,
-      }),
+      body: JSON.stringify(payload),
     });
     return res.json();
   }, [model, provider, agentModels]);

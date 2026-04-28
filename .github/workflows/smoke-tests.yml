@@ -1,0 +1,33 @@
+name: Smoke tests
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Run pipeline state check
+        run: npx tsx scripts/check-pipeline-state.ts
+
+      - name: List tmp output
+        run: |
+          ls -la tmp-pipeline-check || true
+          cat tmp-pipeline-check/pipeline-events.json || true

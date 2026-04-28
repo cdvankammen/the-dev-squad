@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
+import { atomicWriteJson } from '@/lib/fileUtils';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
@@ -132,7 +133,11 @@ function findLatestProject(): string | null {
 }
 
 function writeState(file: string, state: Record<string, unknown>) {
-  writeFileSync(file, JSON.stringify(state, null, 2));
+  try {
+    atomicWriteJson(file, state);
+  } catch {
+    try { writeFileSync(file, JSON.stringify(state, null, 2)); } catch {}
+  }
 }
 
 function appendUserEvent(state: Record<string, unknown>, agent: string, message: string) {

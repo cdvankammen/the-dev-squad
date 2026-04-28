@@ -1,7 +1,7 @@
 {
   "version": 1,
   "idPrefix": "TASK",
-  "nextId": 1,
+  "nextId": 2,
   "states": [
     {
       "name": "Backlog",
@@ -38,6 +38,6 @@
   ],
   "tags": [],
   "insertPosition": "top",
-  "aiPlanRequired": false,
+  "aiPlanRequired": true,
   "sortBy": "priority"
 }
