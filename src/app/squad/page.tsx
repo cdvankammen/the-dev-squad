@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/shared/Badge';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
+import { ProviderHealthHint } from '@/components/provider/ProviderHealthHint';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
 
@@ -52,6 +53,15 @@ const INITIAL_MODEL_OPTIONS = (PROVIDER_FALLBACK_MODELS['claude-cli'] || []).map
   label: m,
 }));
 
+import { STORAGE_KEYS, readStoredValue, writeStoredValue, removeStoredValue, getModelStorageKey, getAgentModelStorageKey } from '@/lib/providerStorage';
+
+function formatHydrationSafeTime(value: string, hydrated: boolean) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (!hydrated) return date.toISOString().slice(11, 19);
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 function cardTone(tone: 'neutral' | 'info' | 'warning' | 'success') {
   if (tone === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
   if (tone === 'success') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
@@ -74,10 +84,21 @@ export default function SquadPage() {
   const [rightTab, setRightTab] = useState<'next' | 'activity' | 'controls'>('next');
   const [selectedModel, setSelectedModel] = useState('claude-opus-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
-  const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
-  const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
+  const [availableProviders, setAvailableProviders] = useState<Array<{
+    id: string;
+    label: string;
+    available: boolean;
+    installedOrConfigured?: boolean;
+    executable?: boolean;
+    reason?: string;
+    suggestion?: string;
+    diagnosticScript?: string;
+    fixScript?: string;
+    helpHref?: string;
+  }>>([]);
+  const [modelOptions, setModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const availableModelCount = modelOptions.filter((o) => !!o.value).length;
-  const [discoveryInfo, setDiscoveryInfo] = useState<Record<string, { usedDiscovery: boolean; modelCount: number; fallbackUsed: boolean }>>({});
+  const [discoveryInfo, setDiscoveryInfo] = useState<Record<string, { usedDiscovery: boolean; modelCount: number; fallbackUsed: boolean; resolvedBaseUrl?: string | null }>>({});
   const [discoveredOnly, setDiscoveredOnly] = useState(false);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
@@ -86,20 +107,30 @@ export default function SquadPage() {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   // Per-agent model overrides — lets users assign different models to different agents
   const [agentModels, setAgentModels] = useState<Record<string, string>>({});
   const [showPerAgentModels, setShowPerAgentModels] = useState(false);
+  const filteredAgentModels = Object.fromEntries(
+    Object.entries(agentModels).filter(([agent, value]) => agent !== 'S' && typeof value === 'string' && value.trim().length > 0),
+  );
+  const selectedProviderInfo = availableProviders.find((provider) => provider.id === selectedProvider);
+
+  function effectiveModelForAgent(agent: AgentId) {
+    return agentModels[agent] || selectedModel;
+  }
 
   // Endpoint config for HTTP-based providers
-  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
+  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat', 'openai-http'];
   const [endpointHost, setEndpointHost] = useState('localhost');
   const [endpointPort, setEndpointPort] = useState<number>(11434);
   const [endpointApiKey, setEndpointApiKey] = useState('');
   const [endpointSaving, setEndpointSaving] = useState(false);
   const [endpointSaveMsg, setEndpointSaveMsg] = useState('');
   const DEFAULT_PORTS: Record<string, number> = {
-    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080,
+    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080, 'openai-http': 443,
   };
 
   const {
@@ -115,19 +146,55 @@ export default function SquadPage() {
   } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, agentModels: Object.keys(agentModels).length > 0 ? agentModels : undefined });
 
   useEffect(() => {
+    if (!selectedProvider) return;
+    try {
+      const initial: Record<string, string> = {};
+      for (const agent of ['A', 'B', 'C', 'D', 'E', 'S']) {
+        const stored = readStoredValue(getAgentModelStorageKey(selectedProvider, agent));
+        if (stored) initial[agent] = stored;
+      }
+      setAgentModels(initial);
+    } catch {}
+  }, [selectedProvider]);
+
+  useEffect(() => {
     (async () => {
       try {
         const res = await fetch('/api/providers');
         const data = await res.json();
         const list = Array.isArray(data?.providers) ? data.providers : [];
         setAvailableProviders(list);
-        const first = list.find((p: any) => p.available) || list[0];
-        if (first) setSelectedProvider(first.id);
+        setSelectedProvider((current) => {
+          if (current && list.some((p: { id: string }) => p.id === current)) {
+            return current;
+          }
+
+          const stored = readStoredValue(STORAGE_KEYS.provider);
+          if (stored && list.some((p: { id: string }) => p.id === stored)) {
+            return stored;
+          }
+
+          const first = list.find((p: { available?: boolean }) => p.available) || list[0];
+          return first?.id;
+        });
       } catch {}
     })();
   }, []);
 
   useEffect(() => {
+    if (selectedProvider) {
+      writeStoredValue(STORAGE_KEYS.provider, selectedProvider);
+    }
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    if (!selectedProvider || !selectedModel) return;
+    if (!modelOptions.some((option) => option.value === selectedModel)) return;
+    writeStoredValue(getModelStorageKey(selectedProvider), selectedModel);
+  }, [selectedProvider, selectedModel, modelOptions]);
+
+  useEffect(() => {
+    setHydrated(true);
     try {
       const stored = localStorage.getItem('discoveredOnly');
       if (stored !== null) setDiscoveredOnly(stored === 'true');
@@ -143,6 +210,9 @@ export default function SquadPage() {
   };
 
   const fallbackOptionsForProvider = (providerId: string) => {
+    if (['lm-studio', 'ollama', 'openwebui'].includes(providerId)) {
+      return [{ value: '', label: 'No models discovered' }];
+    }
     const fallback = PROVIDER_FALLBACK_MODELS[providerId] || [];
     return fallback.length > 0 ? toModelOptions(fallback) : [{ value: '', label: 'No models available' }];
   };
@@ -193,7 +263,9 @@ export default function SquadPage() {
         const fallbackOptions = fallbackOptionsForProvider(providerId);
         setModelOptions(fallbackOptions);
         const first = fallbackOptions.find((o) => !!o.value);
-        setSelectedModel(first?.value || '');
+        if (first?.value) {
+          setSelectedModel(first.value);
+        }
         return;
       }
 
@@ -204,12 +276,18 @@ export default function SquadPage() {
       const details = Array.isArray(data?.modelDetails) ? data.modelDetails : undefined;
       const usedDiscovery = Boolean(data?.usedDiscovery);
       const fallbackUsed = Boolean(data?.fallbackUsed);
+      const resolvedBaseUrl = typeof data?.resolvedBaseUrl === 'string' ? data.resolvedBaseUrl : null;
 
-      setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+      setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed, resolvedBaseUrl } }));
 
       if (list.length > 0) {
         const opts = toModelOptions(list, details);
         setModelOptions(opts);
+        const storedModel = readStoredValue(getModelStorageKey(providerId));
+        if (storedModel && list.includes(storedModel)) {
+          setSelectedModel(storedModel);
+          return;
+        }
         if (!list.includes(selectedModel)) setSelectedModel(list[0]);
         return;
       }
@@ -223,12 +301,12 @@ export default function SquadPage() {
       const fallbackOptions = fallbackOptionsForProvider(providerId);
       setModelOptions(fallbackOptions);
       const first = fallbackOptions.find((o) => !!o.value);
-      setSelectedModel(first?.value || '');
+      if (first?.value) setSelectedModel(first.value);
     } catch {
       const fallbackOptions = fallbackOptionsForProvider(providerId);
       setModelOptions(fallbackOptions);
       const first = fallbackOptions.find((o) => !!o.value);
-      setSelectedModel(first?.value || '');
+      if (first?.value) setSelectedModel(first.value);
     }
   }
 
@@ -296,30 +374,56 @@ export default function SquadPage() {
   const timeline = useMemo(() => state.events.slice(-24), [state.events]);
   const selectedEvents = agentEvents(selectedAgent);
 
+  function buildChatOptions(agent: AgentId) {
+    return {
+      modelOverride: effectiveModelForAgent(agent),
+      ...(isPipeline ? {
+        securityMode: selectedSecurityMode,
+        runGoal: selectedRunGoal,
+        runFinalAudit: selectedRunFinalAudit,
+      } : {}),
+    };
+  }
+
   async function handleSend() {
     const message = chatInput.trim();
     if (!message || sendingAgents.has(selectedAgent)) return;
     setSendingAgents((prev) => new Set(prev).add(selectedAgent));
-    await sendChat(selectedAgent, message, isPipeline ? {
-      securityMode: selectedSecurityMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
-    setChatInput('');
-    setSendingAgents((prev) => {
-      const next = new Set(prev);
-      next.delete(selectedAgent);
-      return next;
-    });
+    setChatError(null);
+    try {
+      await sendChat(selectedAgent, message, buildChatOptions(selectedAgent));
+      setChatInput('');
+    } catch (err) {
+      setChatError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setSendingAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedAgent);
+        return next;
+      });
+    }
   }
 
   async function handleStart() {
     setPipelineStartError(null);
-    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, undefined, selectedRunFinalAudit, discoveredOnly);
-    if (!res?.success) {
-      const err = res?.error || 'Unknown error';
+    try {
+      const res = await startPipeline(
+        selectedSecurityMode,
+        selectedRunGoal,
+        undefined,
+        selectedRunFinalAudit,
+        discoveredOnly,
+        Object.keys(filteredAgentModels).length > 0 ? filteredAgentModels : undefined,
+      );
+      if (!res?.success) {
+        const err = res?.error || 'Unknown error';
+        console.error('Pipeline failed to start:', err);
+        setPipelineStartError(err);
+      }
+    } catch (err) {
+      const message = String(err instanceof Error ? err.message : err);
       console.error('Pipeline failed to start:', err);
-      setPipelineStartError(err);
+      setPipelineStartError(message);
     }
     setSelectedAgent('S');
   }
@@ -387,6 +491,7 @@ export default function SquadPage() {
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <select
+                      data-testid="provider-select"
                       value={selectedProvider}
                       onChange={(e) => setSelectedProvider(e.target.value)}
                       disabled={isPipeline && securityModeLocked}
@@ -396,7 +501,7 @@ export default function SquadPage() {
                         <option value="claude-cli">Claude</option>
                       ) : (
                         availableProviders.map((p) => (
-                          <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                          <option key={p.id} value={p.id}>{p.label}{!p.available ? ' (setup needed)' : ''}</option>
                         ))
                       )}
                     </select>
@@ -429,15 +534,24 @@ export default function SquadPage() {
                   <div className="text-[11px] text-slate-400">
                     Models: <span className="font-mono">{availableModelCount}</span>
                     {selectedProvider && discoveryInfo[selectedProvider] && (
-                      discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                        ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
-                        : discoveryInfo[selectedProvider].usedDiscovery
-                          ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
-                          : discoveryInfo[selectedProvider].fallbackUsed
-                            ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
-                            : null
+                      <>
+                        {discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                          ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                          : discoveryInfo[selectedProvider].usedDiscovery
+                            ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                            : discoveryInfo[selectedProvider].fallbackUsed
+                              ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
+                              : null}
+                        {discoveryInfo[selectedProvider].resolvedBaseUrl && (
+                          <span className="mt-0.5 block text-xs text-slate-500">
+                            endpoint: <span className="font-mono text-slate-400">{discoveryInfo[selectedProvider].resolvedBaseUrl}</span>
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
+
+                  <ProviderHealthHint provider={selectedProviderInfo} />
 
                   {/* Endpoint Config panel */}
                   {selectedProvider && CONFIGURABLE_PROVIDERS.includes(selectedProvider) && (
@@ -497,6 +611,7 @@ export default function SquadPage() {
                   )}
 
                   <select
+                    data-testid="model-select"
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
                     disabled={isPipeline && securityModeLocked}
@@ -516,7 +631,7 @@ export default function SquadPage() {
                   )}
 
                   {/* Per-agent model overrides */}
-                  {isPipeline && !securityModeLocked && availableModelCount > 1 && (
+                  {(!isPipeline || !securityModeLocked) && availableModelCount > 1 && (
                     <div className="mt-2">
                       <button
                         onClick={() => setShowPerAgentModels(!showPerAgentModels)}
@@ -527,12 +642,13 @@ export default function SquadPage() {
                       {showPerAgentModels && (
                         <div className="mt-2 space-y-1.5 rounded-lg border border-white/5 bg-white/[0.02] p-2">
                           <p className="text-[9px] text-slate-500 mb-1">
-                            Optionally assign a different model to each agent. Leave as &quot;Default&quot; to use the pipeline model above.
+                            Optionally assign a different model to each agent. Leave as &quot;Default&quot; to use the selected model above.
                           </p>
-                          {(['A', 'B', 'C', 'D', 'E'] as const).map((agent) => (
+                          {(isPipeline ? (['S', 'A', 'B', 'C', 'D', 'E'] as AgentId[]) : (['S', 'A', 'B', 'C', 'D'] as AgentId[])).map((agent) => (
                             <div key={agent} className="flex items-center gap-2">
                               <span className="text-[10px] font-mono text-slate-400 w-4">{agent}</span>
                               <select
+                                data-testid={`agent-override-${agent}`}
                                 value={agentModels[agent] || ''}
                                 onChange={(e) => {
                                   setAgentModels((prev) => {
@@ -544,6 +660,10 @@ export default function SquadPage() {
                                     }
                                     return next;
                                   });
+                                  try {
+                                    if (e.target.value) writeStoredValue(getAgentModelStorageKey(selectedProvider, agent), e.target.value);
+                                    else removeStoredValue(getAgentModelStorageKey(selectedProvider, agent));
+                                  } catch {}
                                 }}
                                 title={`Model for Agent ${agent}`}
                                 className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-300 focus:border-blue-600 focus:outline-none"
@@ -716,6 +836,11 @@ export default function SquadPage() {
                   </>
                 )}
               </div>
+              {chatError && (
+                <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                  <span className="font-semibold">Chat request failed: </span>{chatError}
+                </div>
+              )}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto bg-black/10 px-4 py-3">
@@ -766,7 +891,7 @@ export default function SquadPage() {
                           <div className={`flex w-full items-center gap-2 text-[10px] uppercase tracking-[0.18em] ${isUser ? 'justify-end' : 'justify-start'} text-slate-500`}>
                             {!isUser && <span>{eventLabel(event.type)}</span>}
                             <span className="font-mono tracking-[0.12em]">
-                              {new Date(event.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              {formatHydrationSafeTime(event.time, hydrated)}
                             </span>
                             {isUser && <span>{eventLabel(event.type)}</span>}
                           </div>
@@ -884,7 +1009,7 @@ export default function SquadPage() {
                         <div key={`${event.time}-${index}`} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2 text-xs leading-relaxed text-slate-300">
                           <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-slate-500">
                             <span>{event.agent === 'system' ? 'System' : AGENT_NAMES[event.agent as AgentId] || event.agent}</span>
-                            <span>{new Date(event.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            <span>{formatHydrationSafeTime(event.time, hydrated)}</span>
                           </div>
                           <MarkdownText className="text-xs leading-relaxed">{event.text}</MarkdownText>
                         </div>
@@ -934,7 +1059,7 @@ export default function SquadPage() {
                           </p>
                         )}
                         {!pipelineRunning && !pipelinePaused && (!state.projectDir || state.currentPhase === 'concept' || state.buildComplete) && (
-                          <button onClick={() => void handleStart()} className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400">
+                          <button data-testid="start-pipeline-button" onClick={() => void handleStart()} className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400">
                             {selectedRunGoal === 'plan-only' ? 'Start Plan Only' : 'Start Full Build'}
                           </button>
                         )}

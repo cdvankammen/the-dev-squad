@@ -11,13 +11,12 @@
  * adapters can import it without Next.js route handler circular-dep issues.
  */
 import { NextResponse } from 'next/server';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   type ProviderConfig,
   readProviderConfigs,
   getProviderConfig,
 } from '@/lib/providerConfig';
+import { atomicWriteJson } from '@/lib/fileUtils';
 
 export type { ProviderConfig };
 export { getProviderConfig };
@@ -40,7 +39,7 @@ const PROVIDER_DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {
 
 function writeConfig(data: Record<string, ProviderConfig>): void {
   try {
-    writeFileSync(join(process.cwd(), 'provider-config.json'), JSON.stringify(data, null, 2), 'utf8');
+    atomicWriteJson(`${process.cwd()}/provider-config.json`, data as unknown as Record<string, unknown>);
   } catch {
     // read-only fs (some deploy environments) — silently ignore
   }

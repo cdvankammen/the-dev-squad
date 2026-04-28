@@ -10,6 +10,19 @@ export async function gotoHome(page: Page) {
   await page.waitForSelector('button, select', { timeout: 10_000 });
 }
 
+/** Ensure provider controls are interactable by switching to Manual mode if needed. */
+export async function ensureManualMode(page: Page) {
+  const provider = providerSelect(page);
+  const locked = await provider.isDisabled().catch(() => false);
+  if (!locked) return;
+
+  const manualButton = page.getByRole('button', { name: /^manual$/i }).first();
+  if (await manualButton.isVisible().catch(() => false)) {
+    await manualButton.click();
+    await page.waitForTimeout(250);
+  }
+}
+
 /** Navigate to the Squad page */
 export async function gotoSquad(page: Page) {
   await page.goto('/squad');

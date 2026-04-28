@@ -18,6 +18,7 @@ import {
   captureCommandOutput,
   extractLikelyModelIds,
   ModelAdapter,
+  resolveWorkspacePath,
   spawnLocal,
 } from './ModelAdapter';
 import { getBaseUrlForProvider, getProviderConfig } from '../providerConfig';
@@ -45,7 +46,7 @@ export default class OpenWebUIAdapter implements ModelAdapter {
   }
 
   spawn(opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
-    const shimPath = path.join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const shimPath = resolveWorkspacePath('scripts', 'http-runner-shim.mjs');
     const base = getOpenWebUIBase();
     // Open WebUI uses /api as the OpenAI-compat prefix
     const apiBase = base.endsWith('/api') ? base : `${base}/api`;

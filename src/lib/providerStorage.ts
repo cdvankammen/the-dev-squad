@@ -21,6 +21,14 @@ export function writeStoredValue(key: string, value: string) {
     // ignore
   }
 }
+export function removeStoredValue(key: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
 
 export function getModelStorageKey(providerId?: string) {
   return `${STORAGE_KEYS.modelPrefix}${providerId || 'default'}`;

@@ -22,7 +22,7 @@ test.describe('Squad page controls', () => {
     await page.reload();
     await waitForProviders(page);
     const appErrors = errors.filter(
-      (e) => !e.includes('ResizeObserver') && !e.includes('Hydration'),
+      (e) => !e.includes('ResizeObserver'),
     );
     expect(appErrors).toHaveLength(0);
   });

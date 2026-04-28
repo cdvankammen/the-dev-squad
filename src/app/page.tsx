@@ -7,6 +7,7 @@ import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
 import { LunarOfficeScene } from '@/components/mission/LunarOfficeScene';
 import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
+import { ProviderHealthHint } from '@/components/provider/ProviderHealthHint';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
@@ -59,14 +60,34 @@ const MANUAL_ROLES: Record<string, string> = {
   S: 'Oversight & diagnostics',
 };
 
+import { STORAGE_KEYS, readStoredValue, writeStoredValue, removeStoredValue, getModelStorageKey, getAgentModelStorageKey } from '@/lib/providerStorage';
+
+function formatHydrationSafeTime(value: string, hydrated: boolean) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (!hydrated) return date.toISOString().slice(11, 19);
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedModel, setSelectedModel] = useState('claude-opus-4-6');
   const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
-  const [modelOptions, setModelOptions] = useState(INITIAL_MODEL_OPTIONS);
+  const [modelOptions, setModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const availableModelCount = modelOptions.filter((o) => !!o.value).length;
-  const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; label: string; available: boolean }>>([]);
-  const [discoveryInfo, setDiscoveryInfo] = useState<Record<string, { usedDiscovery: boolean; modelCount: number; fallbackUsed: boolean }>>({});
+  const [availableProviders, setAvailableProviders] = useState<Array<{
+    id: string;
+    label: string;
+    available: boolean;
+    installedOrConfigured?: boolean;
+    executable?: boolean;
+    reason?: string;
+    suggestion?: string;
+    diagnosticScript?: string;
+    fixScript?: string;
+    helpHref?: string;
+  }>>([]);
+  const [discoveryInfo, setDiscoveryInfo] = useState<Record<string, { usedDiscovery: boolean; modelCount: number; fallbackUsed: boolean; resolvedBaseUrl?: string | null }>>({});
   const [discoveredOnly, setDiscoveredOnly] = useState(false);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
@@ -74,7 +95,7 @@ export default function PipelinePage() {
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
 
   // Endpoint config (host/port) for configurable HTTP providers
-  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat'];
+  const CONFIGURABLE_PROVIDERS = ['ollama', 'lm-studio', 'openwebui', 'openai-compat', 'openai-http'];
   const [endpointHost, setEndpointHost] = useState('localhost');
   const [endpointPort, setEndpointPort] = useState<number>(11434);
   const [endpointApiKey, setEndpointApiKey] = useState('');
@@ -82,13 +103,39 @@ export default function PipelinePage() {
   const [endpointSaveMsg, setEndpointSaveMsg] = useState('');
 
   const DEFAULT_PORTS: Record<string, number> = {
-    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080,
+    ollama: 11434, 'lm-studio': 1234, openwebui: 3000, 'openai-compat': 8080, 'openai-http': 443,
   };
 
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
   } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+
+  // Per-agent model overrides (A/B/C/D/E). These are kept in local state and
+  // persisted per-provider to localStorage so the user's choices survive page
+  // refreshes. They are passed to startPipeline when starting a run.
+  const [agentModelOverrides, setAgentModelOverrides] = useState<Record<string, string>>({ A: '', B: '', C: '', D: '', E: '', S: '' });
+  const filteredAgentModelOverrides = Object.fromEntries(
+     Object.entries(agentModelOverrides).filter(([agent, value]) => agent !== 'S' && typeof value === 'string' && value.trim().length > 0),
+  );
+  const selectedProviderInfo = availableProviders.find((provider) => provider.id === selectedProvider);
+
+  function effectiveModelForAgent(agent: AgentId) {
+     if (agent === 'S') return selectedModel; 
+    return agentModelOverrides[agent] || selectedModel;
+  }
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    try {
+      const initial: Record<string, string> = { A: '', B: '', C: '', D: '', E: '', S: '' };
+      for (const a of ['A', 'B', 'C', 'D', 'E', 'S']) {
+        const stored = readStoredValue(getAgentModelStorageKey(selectedProvider, a));
+        if (stored) initial[a] = stored;
+      }
+      setAgentModelOverrides(initial);
+    } catch {}
+  }, [selectedProvider]);
 
   useEffect(() => {
     (async () => {
@@ -97,11 +144,35 @@ export default function PipelinePage() {
         const data = await res.json();
         const list = Array.isArray(data?.providers) ? data.providers : [];
         setAvailableProviders(list);
-        const first = list.find((p: any) => p.available) || list[0];
-        if (first) setSelectedProvider(first.id);
+
+        setSelectedProvider((current) => {
+          if (current && list.some((p: { id: string }) => p.id === current)) {
+            return current;
+          }
+
+          const stored = readStoredValue(STORAGE_KEYS.provider);
+          if (stored && list.some((p: { id: string }) => p.id === stored)) {
+            return stored;
+          }
+
+          const first = list.find((p: { available?: boolean }) => p.available) || list[0];
+          return first?.id;
+        });
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    if (selectedProvider) {
+      writeStoredValue(STORAGE_KEYS.provider, selectedProvider);
+    }
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    if (!selectedProvider || !selectedModel) return;
+    if (!modelOptions.some((option) => option.value === selectedModel)) return;
+    writeStoredValue(getModelStorageKey(selectedProvider), selectedModel);
+  }, [selectedProvider, selectedModel, modelOptions]);
 
   useEffect(() => {
     try {
@@ -113,6 +184,9 @@ export default function PipelinePage() {
   const toModelOptions = (models: string[]) => models.map((m) => ({ value: m, label: m }));
 
   const fallbackOptionsForProvider = (providerId: string) => {
+    if (['lm-studio', 'ollama', 'openwebui'].includes(providerId)) {
+      return [{ value: '', label: 'No models discovered' }];
+    }
     const fallback = PROVIDER_FALLBACK_MODELS[providerId] || [];
     return fallback.length > 0 ? toModelOptions(fallback) : [{ value: '', label: 'No models available' }];
   };
@@ -163,7 +237,9 @@ export default function PipelinePage() {
         const fallbackOptions = fallbackOptionsForProvider(providerId);
         setModelOptions(fallbackOptions);
         const first = fallbackOptions.find((o) => !!o.value);
-        setSelectedModel(first?.value || '');
+        if (first?.value) {
+          setSelectedModel(first.value);
+        }
         return;
       }
 
@@ -173,12 +249,18 @@ export default function PipelinePage() {
         : [];
       const usedDiscovery = Boolean(data?.usedDiscovery);
       const fallbackUsed = Boolean(data?.fallbackUsed);
+      const resolvedBaseUrl = typeof data?.resolvedBaseUrl === 'string' ? data.resolvedBaseUrl : null;
 
-      setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed } }));
+      setDiscoveryInfo((prev) => ({ ...prev, [providerId]: { usedDiscovery, modelCount: list.length, fallbackUsed, resolvedBaseUrl } }));
 
       if (list.length > 0) {
         const opts = toModelOptions(list);
         setModelOptions(opts);
+        const storedModel = readStoredValue(getModelStorageKey(providerId));
+        if (storedModel && list.includes(storedModel)) {
+          setSelectedModel(storedModel);
+          return;
+        }
         if (!list.includes(selectedModel)) setSelectedModel(list[0]);
         return;
       }
@@ -192,12 +274,12 @@ export default function PipelinePage() {
       const fallbackOptions = fallbackOptionsForProvider(providerId);
       setModelOptions(fallbackOptions);
       const first = fallbackOptions.find((o) => !!o.value);
-      setSelectedModel(first?.value || '');
+      if (first?.value) setSelectedModel(first.value);
     } catch {
       const fallbackOptions = fallbackOptionsForProvider(providerId);
       setModelOptions(fallbackOptions);
       const first = fallbackOptions.find((o) => !!o.value);
-      setSelectedModel(first?.value || '');
+      if (first?.value) setSelectedModel(first.value);
     }
   }
 
@@ -222,12 +304,14 @@ export default function PipelinePage() {
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
   const [pipelineStarted, setPipelineStarted] = useState(false);
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [expandedAgent, setExpandedAgent] = useState<AgentId | null>(null);
   const [panelInputs, setPanelInputs] = useState<Record<string, string>>({ A: '', B: '', C: '', D: '' });
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
 
   const panelRefs = useRef<Record<string, HTMLDivElement | null>>({ A: null, B: null, C: null, D: null, S: null });
   const modalRef = useRef<HTMLDivElement>(null);
@@ -307,33 +391,72 @@ export default function PipelinePage() {
   }, [isPipeline]);
 
   useEffect(() => {
+    if (!isPipeline) return;
+    if (pipelineStartError || state.projectDir || state.pipelineStatus !== 'idle' || state.buildComplete) {
+      setPipelineStarted(false);
+    }
+  }, [isPipeline, pipelineStartError, state.projectDir, state.pipelineStatus, state.buildComplete]);
+
+  useEffect(() => {
+    setHydrated(true);
+    setNowMs(Date.now());
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
+  function buildChatOptions(agent: AgentId) {
+    return {
+      modelOverride: effectiveModelForAgent(agent),
+      ...(isPipeline ? {
+        securityMode: selectedSecurityMode,
+        permissionMode: selectedPermissionMode,
+        runGoal: selectedRunGoal,
+        runFinalAudit: selectedRunFinalAudit,
+      } : {}),
+    };
+  }
+
   async function handleSend() {
     if (sendingAgents.has('S') || !chatInput.trim()) return;
     setSendingAgents(prev => new Set([...prev, 'S']));
-    await sendChat('S', chatInput.trim(), isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
-    setChatInput('');
-    setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    setChatError(null);
+    try {
+      await sendChat('S', chatInput.trim(), buildChatOptions('S'));
+      setChatInput('');
+    } catch (err) {
+      setChatError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    }
   }
 
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
     setPipelineStartError(null);
-    const res = await startPipeline(selectedSecurityMode, selectedRunGoal, selectedPermissionMode, selectedRunFinalAudit, discoveredOnly);
-    if (!res?.success) {
+    // Pass per-agent model overrides to the API so the orchestrator writes them
+    // into the project `pipeline-events.json` and each agent can use a different
+    // model if configured.
+    try {
+      const res = await startPipeline(
+        selectedSecurityMode,
+        selectedRunGoal,
+        selectedPermissionMode,
+        selectedRunFinalAudit,
+        discoveredOnly,
+        Object.keys(filteredAgentModelOverrides).length > 0 ? filteredAgentModelOverrides : undefined,
+      );
+      if (!res?.success) {
+        setPipelineStarted(false);
+        const err = res?.error || 'Unknown error';
+        console.error('Pipeline failed to start:', err);
+        setPipelineStartError(err);
+      }
+    } catch (err) {
       setPipelineStarted(false);
-      const err = res?.error || 'Unknown error';
+      const message = String(err instanceof Error ? err.message : err);
       console.error('Pipeline failed to start:', err);
-      setPipelineStartError(err);
+      setPipelineStartError(message);
     }
   }
 
@@ -341,12 +464,19 @@ export default function PipelinePage() {
     completionNotifiedRef.current = false;
     setPipelineStarted(true);
     setPipelineStartError(null);
-    const res = await resumePipeline();
-    if (!res?.success) {
+    try {
+      const res = await resumePipeline();
+      if (!res?.success) {
+        setPipelineStarted(false);
+        const err = res?.error || 'Unknown error';
+        console.error('Pipeline failed to resume:', err);
+        setPipelineStartError(err);
+      }
+    } catch (err) {
       setPipelineStarted(false);
-      const err = res?.error || 'Unknown error';
+      const message = String(err instanceof Error ? err.message : err);
       console.error('Pipeline failed to resume:', err);
-      setPipelineStartError(err);
+      setPipelineStartError(message);
     }
   }
 
@@ -379,14 +509,15 @@ export default function PipelinePage() {
 
     setSendingAgents(prev => new Set([...prev, id]));
     setSelectedAgent(id);
-    await sendChat(id, msg, isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
-    setPanelInputs(prev => ({ ...prev, [id]: '' }));
-    setSendingAgents(prev => { const n = new Set(prev); n.delete(id); return n; });
+    setChatError(null);
+    try {
+      await sendChat(id, msg, buildChatOptions(id));
+      setPanelInputs(prev => ({ ...prev, [id]: '' }));
+    } catch (err) {
+      setChatError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete(id); return n; });
+    }
   }
 
   async function handleExpandedSend() {
@@ -394,14 +525,15 @@ export default function PipelinePage() {
     const msg = chatInput.trim();
 
     setSendingAgents(prev => new Set([...prev, expandedAgent]));
-    await sendChat(expandedAgent, msg, isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
-    setChatInput('');
-    setSendingAgents(prev => { const n = new Set(prev); n.delete(expandedAgent!); return n; });
+    setChatError(null);
+    try {
+      await sendChat(expandedAgent, msg, buildChatOptions(expandedAgent));
+      setChatInput('');
+    } catch (err) {
+      setChatError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete(expandedAgent!); return n; });
+    }
   }
 
   async function handleHandoff(fromAgent: AgentId, toAgent: AgentId) {
@@ -411,13 +543,14 @@ export default function PipelinePage() {
     if (text.length > 2000) text = text.slice(0, 2000) + '...(truncated)';
     const msg = `[HANDOFF:${fromAgent}→${toAgent}] ${text}\n\nReview this and continue the work.`;
     setSendingAgents(prev => new Set([...prev, toAgent]));
-    await sendChat(toAgent, msg, isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
-    setSendingAgents(prev => { const n = new Set(prev); n.delete(toAgent); return n; });
+    setChatError(null);
+    try {
+      await sendChat(toAgent, msg, buildChatOptions(toAgent));
+    } catch (err) {
+      setChatError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete(toAgent); return n; });
+    }
   }
 
   const phase = state.currentPhase;
@@ -526,7 +659,7 @@ export default function PipelinePage() {
               {state.events.map((e, i) => (
                 <div key={i} className="flex gap-2 py-[2px] text-[11px] leading-relaxed">
                   <span className="flex-shrink-0 text-[#333]">
-                    {new Date(e.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {formatHydrationSafeTime(e.time, hydrated)}
                   </span>
                   <span className={`flex-shrink-0 w-[18px] font-bold ${
                     e.agent === 'A' ? 'text-violet-400' :
@@ -587,6 +720,7 @@ export default function PipelinePage() {
                 )}
                 <div className="flex flex-wrap items-center gap-2">
                   <select
+                    data-testid="provider-select"
                     value={selectedProvider}
                     onChange={(e) => setSelectedProvider(e.target.value)}
                     disabled={isPipeline && securityModeLocked}
@@ -596,7 +730,7 @@ export default function PipelinePage() {
                       <option value="claude-cli">Claude</option>
                     ) : (
                       availableProviders.map((p) => (
-                        <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{!p.available ? ' (unavailable)' : ''}</option>
+                        <option key={p.id} value={p.id}>{p.label}{!p.available ? ' (setup needed)' : ''}</option>
                       ))
                     )}
                   </select>
@@ -629,15 +763,24 @@ export default function PipelinePage() {
                 <div className="text-[11px] text-slate-400">
                   Models: <span className="font-mono">{availableModelCount}</span>
                   {selectedProvider && discoveryInfo[selectedProvider] && (
-                    discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
-                    ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
-                    : discoveryInfo[selectedProvider].usedDiscovery
-                      ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
-                      : discoveryInfo[selectedProvider].fallbackUsed
-                        ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
-                        : null
+                    <>
+                      {discoveryInfo[selectedProvider].usedDiscovery && discoveryInfo[selectedProvider].modelCount === 0
+                        ? <span className="mt-0.5 block text-xs text-amber-300">{discoveredOnly ? '(discovery found 0 — discovered-only)' : '(discovery found 0 — provider fallback)'}</span>
+                        : discoveryInfo[selectedProvider].usedDiscovery
+                          ? <span className="mt-0.5 block text-xs text-slate-400">(discovered {discoveryInfo[selectedProvider].modelCount})</span>
+                          : discoveryInfo[selectedProvider].fallbackUsed
+                            ? <span className="mt-0.5 block text-xs text-slate-400">(provider fallback)</span>
+                            : null}
+                      {discoveryInfo[selectedProvider].resolvedBaseUrl && (
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          endpoint: <span className="font-mono text-slate-400">{discoveryInfo[selectedProvider].resolvedBaseUrl}</span>
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
+
+                <ProviderHealthHint provider={selectedProviderInfo} />
 
                 {/* Endpoint Config — shown for HTTP-based providers */}
                 {selectedProvider && CONFIGURABLE_PROVIDERS.includes(selectedProvider) && (
@@ -702,6 +845,7 @@ export default function PipelinePage() {
                 )}
 
                 <select
+                  data-testid="model-select"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                   disabled={isPipeline && securityModeLocked}
@@ -1047,6 +1191,11 @@ export default function PipelinePage() {
                 )}
               </div>
             )}
+            {chatError && (
+              <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                <span className="font-semibold">Chat request failed: </span>{chatError}
+              </div>
+            )}
             {/* Staging-ready hint: show when no concept has been defined yet */}
             {isPipeline && !pipelineRunning && !pipelinePaused && !pipelineStarted && !state.concept && !pipelineStartError && (
               <p className="mb-2 text-[10px] text-slate-500">
@@ -1055,7 +1204,7 @@ export default function PipelinePage() {
             )}
             <div className="flex gap-2">
             {isPipeline && !pipelineRunning && !pipelinePaused && (!state.projectDir || state.currentPhase === 'concept' || state.buildComplete) && (
-              <button onClick={handleStartPipeline} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-emerald-400">
+              <button data-testid="start-pipeline-button" onClick={handleStartPipeline} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition hover:bg-emerald-400">
                 {selectedRunGoal === 'plan-only' ? 'START PLAN ONLY' : 'START FULL BUILD'}
               </button>
             )}
@@ -1155,7 +1304,7 @@ export default function PipelinePage() {
                 e.type === 'text' ? 'text-slate-400' : 'text-[#555]'
               }`}>
                 <span className="mr-1.5 text-[9px] text-[#333]">
-                  {new Date(e.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {formatHydrationSafeTime(e.time, hydrated)}
                 </span>
                 <MarkdownText>{e.text}</MarkdownText>
               </div>
@@ -1270,7 +1419,7 @@ export default function PipelinePage() {
                       e.type === 'text' ? 'text-slate-400' : 'text-[#555]'
                     }`}>
                       <span className="mr-1.5 text-[9px] text-[#333]">
-                        {new Date(e.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        {formatHydrationSafeTime(e.time, hydrated)}
                       </span>
                       <MarkdownText>{e.text}</MarkdownText>
                     </div>
@@ -1279,6 +1428,33 @@ export default function PipelinePage() {
               </div>
               {/* Chat input */}
               <div className="flex-shrink-0 border-t border-[#1a1a2a] px-2.5 py-2" onClick={(e) => e.stopPropagation()}>
+                {/* Per-agent model selector */}
+                {selectedProvider && availableModelCount > 1 && (
+                  <div className="mb-2">
+                    <label className="block text-[10px] text-slate-500">
+                      {isPipeline ? 'Model for' : 'Default model for'} {AGENT_NAMES[id]}
+                    </label>
+                    <select
+                      data-testid={`agent-model-${id}`}
+                      value={agentModelOverrides[id] || ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setAgentModelOverrides((prev) => ({ ...prev, [id]: v }));
+                        try {
+                          if (v) writeStoredValue(getAgentModelStorageKey(selectedProvider, id), v);
+                          else removeStoredValue(getAgentModelStorageKey(selectedProvider, id));
+                        } catch {}
+                      }}
+                      className="w-full rounded-md border border-white/10 bg-[#0c0c18] px-2 py-1 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">Default ({selectedModel})</option>
+                      {modelOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value} disabled={opt.value === ''}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex items-end gap-1.5">
                   <AutoGrowTextarea
                     value={panelInputs[id] || ''}
@@ -1319,12 +1495,10 @@ export default function PipelinePage() {
             onDeploy={() => { void deployAfterAudit(); }}
             onSendChat={(msg) => {
               setSendingAgents((prev) => new Set([...prev, 'E' as AgentId]));
-              void sendChat('E' as AgentId, msg, isPipeline ? {
-                securityMode: selectedSecurityMode,
-                permissionMode: selectedPermissionMode,
-                runGoal: selectedRunGoal,
-                runFinalAudit: selectedRunFinalAudit,
-              } : undefined).finally(() => {
+              setChatError(null);
+              void sendChat('E' as AgentId, msg, buildChatOptions('E' as AgentId)).catch((err) => {
+                setChatError(String(err instanceof Error ? err.message : err));
+              }).finally(() => {
                 setSendingAgents((prev) => { const n = new Set(prev); n.delete('E' as AgentId); return n; });
               });
             }}
@@ -1360,7 +1534,7 @@ export default function PipelinePage() {
                   e.type === 'text' ? 'text-slate-400' : 'text-[#555]'
                 }`}>
                   <span className="mr-2 text-[10px] text-[#444]">
-                    {new Date(e.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {formatHydrationSafeTime(e.time, hydrated)}
                   </span>
                   <MarkdownText>{e.text}</MarkdownText>
                 </div>

@@ -9,6 +9,7 @@ import {
   extractLikelyModelIds,
   ModelAdapter,
   normalizeModelIds,
+  resolveWorkspacePath,
   spawnLocal,
 } from './ModelAdapter';
 
@@ -320,7 +321,7 @@ export class ClaudeCodeRouterAdapter implements ModelAdapter {
     args: string[],
     provider: { name: string; baseUrl: string; apiKey: string },
   ) {
-    const shimPath = join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const shimPath = resolveWorkspacePath('scripts', 'http-runner-shim.mjs');
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,

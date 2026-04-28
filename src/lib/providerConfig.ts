@@ -80,14 +80,7 @@ const DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {
   'openai-compat': { host: 'localhost', port: 8080 },
 };
 
-let _cache: Record<string, ProviderConfig> | null = null;
-let _cacheTs = 0;
-const CACHE_TTL_MS = 5_000; // re-read file at most every 5 s
-
 export function readProviderConfigs(): Record<string, ProviderConfig> {
-  const now = Date.now();
-  if (_cache && now - _cacheTs < CACHE_TTL_MS) return _cache;
-
   const configFile = join(process.cwd(), 'provider-config.json');
   let saved: Record<string, ProviderConfig> = {};
   if (existsSync(configFile)) {
@@ -97,8 +90,6 @@ export function readProviderConfigs(): Record<string, ProviderConfig> {
       saved = {};
     }
   }
-  _cache = saved;
-  _cacheTs = now;
   return saved;
 }
 

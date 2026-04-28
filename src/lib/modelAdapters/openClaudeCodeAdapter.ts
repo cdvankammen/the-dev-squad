@@ -1,9 +1,32 @@
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { ModelAdapter, AdapterSpawnOptions, spawnLocal, captureCommandOutput, collectConfiguredModelIds, commandExists, normalizeModelIds } from './ModelAdapter';
+
+function hasOccAuthHints(): boolean {
+  if (process.env.ANTHROPIC_API_KEY) return true;
+  if (process.env.ANTHROPIC_AUTH_TOKEN) return true;
+  if (process.env.CLAUDE_CODE_TOKEN) return true;
+
+  if (process.env.AWS_PROFILE) return true;
+  if (process.env.AWS_ACCESS_KEY_ID && (process.env.AWS_SECRET_ACCESS_KEY || process.env.AWS_SESSION_TOKEN)) return true;
+  if (process.env.ANTHROPIC_BEDROCK_MODEL || process.env.AWS_BEDROCK_MODEL || process.env.OCC_MODEL) return true;
+
+  const home = homedir();
+  const credentialFiles = [
+    join(home, '.aws', 'credentials'),
+    join(home, '.aws', 'config'),
+    join(home, '.claude', '.credentials.json'),
+  ];
+
+  return credentialFiles.some((file) => existsSync(file));
+}
 
 /** Adapter for ruvnet/open-claude-code (occ) */
 export class OpenClaudeCodeAdapter implements ModelAdapter {
   isAvailable(): boolean {
-    return commandExists('occ') || commandExists('npx');
+    if (!(commandExists('occ') || commandExists('npx'))) return false;
+    return hasOccAuthHints();
   }
 
   supportsExecution(): boolean {

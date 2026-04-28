@@ -23,33 +23,40 @@ import {
   AdapterSpawnOptions,
   captureCommandOutput,
   ModelAdapter,
+  resolveWorkspacePath,
   spawnLocal,
 } from './ModelAdapter';
-import { getBaseUrlForProvider, getProviderConfig, getLmStudioUrlsFromCcrConfig } from '../providerConfig';
+import { getBaseUrlForProvider, getProviderConfig, getLmStudioUrlsFromCcrConfig, readProviderConfigs } from '../providerConfig';
 
 /**
- * Returns an ordered list of LM Studio base URLs to try.
+ * Returns the LM Studio base URL(s) that match the execution target.
+ *
+ * Important: discovery should match the endpoint that execution will use.
+ * Showing a union of multiple LM Studio hosts in the dropdown is misleading,
+ * because the runner only talks to ONE base URL when it actually sends a chat.
+ *
  * Priority:
- *  1. Env var LM_STUDIO_BASE_URL
- *  2. Saved provider-config.json (non-localhost override)
- *  3. All CCR-configured LM Studio hosts (e.g. 192.168.1.90:1234 + 10.2.0.90:1234)
+ *  1. Env var LM_STUDIO_BASE_URL (only this host)
+ *  2. Saved provider-config.json (only this host)
+ *  3. First CCR-configured LM Studio host
  *  4. Default: http://localhost:1234
  */
 function getLmStudioBases(): string[] {
-  // getBaseUrlForProvider checks env → saved config → first CCR URL → default
-  const primary = getBaseUrlForProvider('lm-studio');
-  const ccrUrls = getLmStudioUrlsFromCcrConfig();
-
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const u of [primary, ...ccrUrls]) {
-    const clean = u.replace(/\/$/, '');
-    if (!seen.has(clean)) {
-      seen.add(clean);
-      result.push(clean);
-    }
+  if (process.env.LM_STUDIO_BASE_URL) {
+    return [process.env.LM_STUDIO_BASE_URL.replace(/\/$/, '')];
   }
-  return result.length > 0 ? result : ['http://localhost:1234'];
+
+  const saved = readProviderConfigs()['lm-studio'];
+  if (saved) {
+    return [getBaseUrlForProvider('lm-studio')];
+  }
+
+  const ccrUrls = getLmStudioUrlsFromCcrConfig();
+  if (ccrUrls.length > 0) {
+    return [ccrUrls[0].replace(/\/$/, '')];
+  }
+
+  return ['http://localhost:1234'];
 }
 
 function getLmStudioBase(): string {
@@ -107,7 +114,7 @@ export default class LMStudioAdapter implements ModelAdapter {
   }
 
   spawn(opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
-    const shimPath = path.join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const shimPath = resolveWorkspacePath('scripts', 'http-runner-shim.mjs');
     const base = getLmStudioBase();
     // Always use OpenAI-compat endpoint for execution (well-supported by LM Studio)
     const openAIBase = base.endsWith('/v1') ? base : `${base}/v1`;

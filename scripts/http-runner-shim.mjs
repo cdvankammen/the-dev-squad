@@ -30,8 +30,11 @@ import os from 'node:os';
 const MAX_AGENT_TURNS = parseInt(process.env.HTTP_SHIM_MAX_TURNS || '30', 10);
 const TOOL_OUTPUT_LIMIT = parseInt(process.env.HTTP_SHIM_TOOL_OUTPUT_LIMIT || '12000', 10);
 const BASH_TIMEOUT_MS = parseInt(process.env.HTTP_SHIM_BASH_TIMEOUT_MS || '60000', 10);
+const HTTP_REQUEST_TIMEOUT_MS = parseInt(process.env.HTTP_SHIM_REQUEST_TIMEOUT_MS || '120000', 10);
+const WEB_TOOL_TIMEOUT_MS = parseInt(process.env.HTTP_SHIM_WEB_TOOL_TIMEOUT_MS || '20000', 10);
 const SESSION_DIR = path.join(os.homedir(), '.dev-squad-sessions');
 const MAX_SESSION_CHARS = parseInt(process.env.HTTP_SHIM_MAX_SESSION_CHARS || '24000', 10);
+const APPROVED_BASH_GRANT_FILE = 'pipeline-approved-bash.json';
 
 // ── Session persistence (enables --resume across orchestrator calls) ────
 
@@ -133,6 +136,26 @@ function normalizeBaseUrl(base) {
   if (!base) return 'https://api.openai.com/v1';
   const trimmed = base.replace(/\/+$/, '');
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = HTTP_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    debug(`POST ${url} (timeout=${timeoutMs}ms)`);
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
+      throw new Error(`HTTP request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Arg parsing (supports all flags buildClaudeArgs emits) ──────────
@@ -323,7 +346,37 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'WebSearch',
+      description: 'Search the public web for current documentation, APIs, library usage, and reference material.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The search query to run.' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'WebFetch',
+      description: 'Fetch the contents of a public URL for source verification or documentation lookup.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The URL to fetch.' },
+        },
+        required: ['url'],
+      },
+    },
+  },
 ];
+
+const KNOWN_TOOL_NAMES = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
 
 // ── Tool execution ──────────────────────────────────────────────────
 
@@ -346,14 +399,17 @@ function parseToolCallsFromText(text) {
   if (!text) return calls;
 
   // Pattern 1: ToolName({"key": "value"})
-  const funcPattern = /\b(Read|Write|Edit|Bash|Glob|Grep)\s*\(\s*(\{[\s\S]*?\})\s*\)/g;
+  // Also tolerate noisy local-model prefixes like [TOOL_CALLS]Read(...) or TOOL_CALLS_Grep(...)
+  const funcPattern = /([A-Za-z_\[\]\-:]+)\s*\(\s*(\{[\s\S]*?\})\s*\)/g;
   let match;
   while ((match = funcPattern.exec(text)) !== null) {
     try {
+      const toolName = normalizeToolName(match[1]);
+      if (!KNOWN_TOOL_NAMES.includes(toolName)) continue;
       const args = JSON.parse(match[2]);
       calls.push({
         id: `text-tool-${crypto.randomUUID()}`,
-        function: { name: match[1], arguments: JSON.stringify(args) },
+        function: { name: toolName, arguments: JSON.stringify(args) },
       });
     } catch { /* skip malformed JSON */ }
   }
@@ -364,11 +420,12 @@ function parseToolCallsFromText(text) {
   while ((match = blockPattern.exec(text)) !== null) {
     try {
       const raw = JSON.parse(match[1] || match[2]);
-      if (raw.name && raw.arguments) {
+      const toolName = normalizeToolName(raw.name);
+      if (toolName && raw.arguments && KNOWN_TOOL_NAMES.includes(toolName)) {
         calls.push({
           id: `text-tool-${crypto.randomUUID()}`,
           function: {
-            name: raw.name,
+            name: toolName,
             arguments: typeof raw.arguments === 'string'
               ? raw.arguments
               : JSON.stringify(raw.arguments),
@@ -380,11 +437,12 @@ function parseToolCallsFromText(text) {
   if (calls.length > 0) return calls;
 
   // Pattern 3: JSON object with "tool" or "name" field in the text
-  const jsonPattern = /\{[^{}]*"(?:tool|name)"\s*:\s*"(Read|Write|Edit|Bash|Glob|Grep)"[^{}]*\}/g;
+  const jsonPattern = /\{[^{}]*"(?:tool|name)"\s*:\s*"([^"]+)"[^{}]*\}/g;
   while ((match = jsonPattern.exec(text)) !== null) {
     try {
       const raw = JSON.parse(match[0]);
-      const name = raw.tool || raw.name;
+      const name = normalizeToolName(raw.tool || raw.name);
+      if (!KNOWN_TOOL_NAMES.includes(name)) continue;
       const args = raw.arguments || raw.input || raw.params || {};
       calls.push({
         id: `text-tool-${crypto.randomUUID()}`,
@@ -399,23 +457,365 @@ function parseToolCallsFromText(text) {
   return calls;
 }
 
+function normalizeToolName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return raw;
+
+  const cleaned = raw
+    .replace(/^\[TOOL_CALLS\]/i, '')
+    .replace(/^TOOL_CALLS[_:-]*/i, '')
+    .replace(/^\[+|\]+$/g, '')
+    .trim();
+
+  const lower = cleaned.toLowerCase();
+  if (lower === 'read') return 'Read';
+  if (lower === 'write') return 'Write';
+  if (lower === 'edit') return 'Edit';
+  if (lower === 'bash') return 'Bash';
+  if (lower === 'glob') return 'Glob';
+  if (lower === 'grep') return 'Grep';
+  if (lower === 'websearch') return 'WebSearch';
+  if (lower === 'webfetch') return 'WebFetch';
+
+   const canonicalMatch = lower.match(/(^|[^a-z])(read|write|edit|bash|glob|grep|websearch|webfetch)([^a-z]|$)/i);
+   if (canonicalMatch?.[2]) {
+    const canonical = canonicalMatch[2].toLowerCase();
+    if (canonical === 'read') return 'Read';
+    if (canonical === 'write') return 'Write';
+    if (canonical === 'edit') return 'Edit';
+    if (canonical === 'bash') return 'Bash';
+    if (canonical === 'glob') return 'Glob';
+    if (canonical === 'grep') return 'Grep';
+    if (canonical === 'websearch') return 'WebSearch';
+    if (canonical === 'webfetch') return 'WebFetch';
+   }
+
+  return cleaned;
+}
+
+function normalizeToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls)) return [];
+  return toolCalls.map((tc) => ({
+    ...tc,
+    function: {
+      ...(tc?.function || {}),
+      name: normalizeToolName(tc?.function?.name),
+      arguments: tc?.function?.arguments || '{}',
+    },
+  }));
+}
+
+function isKnownToolName(name) {
+  return KNOWN_TOOL_NAMES.includes(normalizeToolName(name));
+}
+
 function resolvePath(filePath) {
   if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(process.cwd(), filePath);
 }
 
-function executeTool(name, input) {
+function findPipelineProjectRoot(startDir = process.cwd()) {
+  let current = path.resolve(startDir);
+  while (true) {
+    if (fs.existsSync(path.join(current, 'pipeline-events.json'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return path.resolve(startDir);
+}
+
+function readPipelinePhase(projectDir = findPipelineProjectRoot()) {
   try {
-    switch (name) {
+    const raw = fs.readFileSync(path.join(projectDir, 'pipeline-events.json'), 'utf8');
+    const state = JSON.parse(raw);
+    return String(state.currentPhase || 'concept');
+  } catch {
+    return 'concept';
+  }
+}
+
+function isPathInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function getWriteGuardDecision(filePath) {
+  const agent = process.env.PIPELINE_AGENT || '';
+  const resolved = resolvePath(filePath);
+
+  if (!agent) {
+    return { allow: true, resolvedPath: resolved };
+  }
+
+  if (!['A', 'B', 'C', 'D', 'E', 'S'].includes(agent)) {
+    return { allow: false, resolvedPath: resolved, message: `BLOCKED: Unknown agent identity '${agent}'` };
+  }
+
+  const projectDir = findPipelineProjectRoot(process.cwd());
+  const normalized = resolved.split(path.sep).join('/').toLowerCase();
+  const fileName = path.basename(resolved);
+
+  if (!isPathInside(projectDir, resolved)) {
+    return {
+      allow: false,
+      resolvedPath: resolved,
+      message: `BLOCKED: Cannot write to ${resolved} — outside the active pipeline project`,
+    };
+  }
+
+  if (normalized.includes('/.claude/')) {
+    return {
+      allow: false,
+      resolvedPath: resolved,
+      message: 'BLOCKED: Cannot modify hook/settings files under .claude',
+    };
+  }
+
+  const currentPhase = readPipelinePhase(projectDir);
+
+  switch (agent) {
+    case 'A':
+      if (currentPhase === 'concept') {
+        return {
+          allow: false,
+          resolvedPath: resolved,
+          message: 'BLOCKED: Agent A cannot write during Phase 0',
+        };
+      }
+      if (fileName !== 'plan.md') {
+        return {
+          allow: false,
+          resolvedPath: resolved,
+          message: `BLOCKED: Agent A can only write plan.md, not ${fileName}`,
+        };
+      }
+      break;
+    case 'B':
+      return { allow: false, resolvedPath: resolved, message: 'BLOCKED: Agent B cannot write files' };
+    case 'C':
+      if (fileName === 'plan.md') {
+        return {
+          allow: false,
+          resolvedPath: resolved,
+          message: 'BLOCKED: Agent C cannot modify plan.md — it is locked',
+        };
+      }
+      break;
+    case 'D':
+      return { allow: false, resolvedPath: resolved, message: 'BLOCKED: Agent D cannot write files' };
+    case 'E':
+      return { allow: false, resolvedPath: resolved, message: 'BLOCKED: Agent E cannot write files' };
+    case 'S':
+    default:
+      break;
+  }
+
+  return { allow: true, resolvedPath: resolved };
+}
+
+function approvedBashGrantPath(projectDir = process.cwd()) {
+  return path.join(projectDir, APPROVED_BASH_GRANT_FILE);
+}
+
+function readApprovedBashGrant(projectDir = process.cwd()) {
+  try {
+    const file = approvedBashGrantPath(projectDir);
+    if (!fs.existsSync(file)) return null;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function clearApprovedBashGrant(projectDir = process.cwd(), requestId) {
+  try {
+    const current = readApprovedBashGrant(projectDir);
+    if (!current) return;
+    if (requestId && current.requestId !== requestId) return;
+    fs.unlinkSync(approvedBashGrantPath(projectDir));
+  } catch {
+    // ignore
+  }
+}
+
+function getBashGuardDecision(command) {
+  const agent = process.env.PIPELINE_AGENT || '';
+  const securityMode = process.env.PIPELINE_SECURITY_MODE || 'fast';
+
+  if (!agent) {
+    return { allow: true };
+  }
+
+  if (['A', 'B', 'E'].includes(agent)) {
+    return {
+      allow: false,
+      message:
+        agent === 'A'
+          ? 'BLOCKED: Agent A cannot run Bash commands in pipeline mode.'
+          : agent === 'B'
+            ? 'BLOCKED: Agent B cannot run Bash commands in pipeline mode.'
+            : 'BLOCKED: Agent E cannot run Bash commands in pipeline mode.',
+    };
+  }
+
+  if (securityMode === 'strict' && (agent === 'C' || agent === 'D')) {
+    const grant = readApprovedBashGrant(process.cwd());
+    if (!grant) {
+      return {
+        allow: false,
+        message: `Strict mode: Agent ${agent} Bash requires approval before running: ${command}`,
+      };
+    }
+
+    if (grant.command !== command) {
+      return {
+        allow: false,
+        message: `Strict mode: Agent ${agent} was approved for a different Bash command. Re-request approval for: ${command}`,
+      };
+    }
+
+    clearApprovedBashGrant(process.cwd(), grant.requestId);
+  }
+
+  return { allow: true };
+}
+
+function getWebToolDecision(toolName) {
+  const agent = process.env.PIPELINE_AGENT || '';
+
+  if (!agent) {
+    return { allow: true };
+  }
+
+  if (agent === 'A' || agent === 'B') {
+    return { allow: true };
+  }
+
+  return {
+    allow: false,
+    message: `BLOCKED: Agent ${agent} cannot use ${toolName}`,
+  };
+}
+
+function stripHtml(html) {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2F;/gi, '/');
+}
+
+async function performWebSearch(query) {
+  const decision = getWebToolDecision('WebSearch');
+  if (!decision.allow) return { is_error: true, content: decision.message };
+  if (!query) return { is_error: true, content: 'WebSearch requires a non-empty query.' };
+
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const response = await fetchWithTimeout(url, {
+    headers: {
+      'User-Agent': 'the-dev-squad-http-shim/1.0',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+  }, WEB_TOOL_TIMEOUT_MS);
+
+  if (!response.ok) {
+    return { is_error: true, content: `WebSearch failed with HTTP ${response.status}` };
+  }
+
+  const html = await response.text();
+  const results = [];
+  const anchorPattern = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+
+  while ((match = anchorPattern.exec(html)) !== null && results.length < 5) {
+    const href = decodeHtmlEntities(match[1]);
+    const title = decodeHtmlEntities(stripHtml(match[2]));
+    const nearby = html.slice(match.index, match.index + 1200);
+    const snippetMatch = nearby.match(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i)
+      || nearby.match(/<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const snippet = decodeHtmlEntities(stripHtml(snippetMatch?.[1] || ''));
+
+    if (title || href) {
+      results.push({ title, href, snippet });
+    }
+  }
+
+  if (results.length === 0) {
+    const fallback = stripHtml(html).slice(0, 2000) || 'No search results found.';
+    return { is_error: false, content: truncateOutput(`Search results for "${query}":\n\n${fallback}`) };
+  }
+
+  const rendered = results.map((result, index) => {
+    const lines = [`${index + 1}. ${result.title || '(untitled)'}`, `   ${result.href}`];
+    if (result.snippet) lines.push(`   ${result.snippet}`);
+    return lines.join('\n');
+  }).join('\n\n');
+
+  return { is_error: false, content: truncateOutput(`Search results for "${query}":\n\n${rendered}`) };
+}
+
+async function performWebFetch(url) {
+  const decision = getWebToolDecision('WebFetch');
+  if (!decision.allow) return { is_error: true, content: decision.message };
+  if (!url) return { is_error: true, content: 'WebFetch requires a non-empty url.' };
+
+  const response = await fetchWithTimeout(url, {
+    headers: {
+      'User-Agent': 'the-dev-squad-http-shim/1.0',
+      Accept: 'text/html,application/json,text/plain,*/*',
+    },
+  }, WEB_TOOL_TIMEOUT_MS);
+
+  const contentType = response.headers.get('content-type') || 'unknown';
+  const rawBody = await response.text();
+  const body = /html/i.test(contentType) ? stripHtml(rawBody) : rawBody;
+
+  return {
+    is_error: !response.ok,
+    content: truncateOutput(`URL: ${url}\nStatus: ${response.status} ${response.statusText}\nContent-Type: ${contentType}\n\n${body}`),
+  };
+}
+
+async function executeTool(name, input) {
+  const normalizedName = normalizeToolName(name);
+  try {
+    switch (normalizedName) {
       case 'Read': {
         const fp = resolvePath(input.file_path);
         if (!fs.existsSync(fp)) return { is_error: true, content: `File not found: ${fp}` };
+        const stat = fs.statSync(fp);
+        if (stat.isDirectory()) {
+          const entries = fs.readdirSync(fp).slice(0, 200);
+          const rendered = entries.length > 0
+            ? entries.map((entry) => path.join(fp, entry)).join('\n')
+            : '(empty directory)';
+          return { is_error: false, content: truncateOutput(rendered) };
+        }
         const content = fs.readFileSync(fp, 'utf8');
         return { is_error: false, content: truncateOutput(content) };
       }
 
       case 'Write': {
-        const fp = resolvePath(input.file_path);
+        const writeGuard = getWriteGuardDecision(input.file_path);
+        if (!writeGuard.allow) {
+          return { is_error: true, content: writeGuard.message };
+        }
+        const fp = writeGuard.resolvedPath;
         const dir = path.dirname(fp);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(fp, input.content, 'utf8');
@@ -423,7 +823,11 @@ function executeTool(name, input) {
       }
 
       case 'Edit': {
-        const fp = resolvePath(input.file_path);
+        const writeGuard = getWriteGuardDecision(input.file_path);
+        if (!writeGuard.allow) {
+          return { is_error: true, content: writeGuard.message };
+        }
+        const fp = writeGuard.resolvedPath;
         if (!fs.existsSync(fp)) return { is_error: true, content: `File not found: ${fp}` };
         const existing = fs.readFileSync(fp, 'utf8');
         if (!existing.includes(input.old_string)) {
@@ -440,6 +844,10 @@ function executeTool(name, input) {
 
       case 'Bash': {
         const cmd = input.command;
+        const guard = getBashGuardDecision(cmd);
+        if (!guard.allow) {
+          return { is_error: true, content: guard.message };
+        }
         try {
           const output = execSync(cmd, {
             cwd: process.cwd(),
@@ -482,6 +890,12 @@ function executeTool(name, input) {
         }
       }
 
+      case 'WebSearch':
+        return await performWebSearch(String(input.query || ''));
+
+      case 'WebFetch':
+        return await performWebFetch(String(input.url || ''));
+
       default:
         return { is_error: true, content: `Unknown tool: ${name}` };
     }
@@ -505,6 +919,66 @@ function toText(content) {
       .trim();
   }
   return '';
+}
+
+function appendNormalizedMessage(messages, role, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return;
+
+  const last = messages[messages.length - 1];
+  if (last && last.role === role) {
+    last.content = `${last.content}\n\n${trimmed}`.trim();
+    return;
+  }
+
+  messages.push({ role, content: trimmed });
+}
+
+function summarizeToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+  return toolCalls
+    .map((tc) => {
+      const name = tc?.function?.name || 'Tool';
+      const args = tc?.function?.arguments || '{}';
+      return `[Tool request: ${name} ${args}]`;
+    })
+    .join('\n');
+}
+
+function normalizeResumeMessages(messages) {
+  const normalized = [];
+
+  for (const message of messages || []) {
+    if (!message || typeof message !== 'object') continue;
+
+    if (message.role === 'system') {
+      if (!normalized.some((entry) => entry.role === 'system')) {
+        appendNormalizedMessage(normalized, 'system', toText(message.content));
+      }
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const assistantText = [
+        toText(message.content),
+        summarizeToolCalls(message.tool_calls),
+      ].filter(Boolean).join('\n\n');
+      appendNormalizedMessage(normalized, 'assistant', assistantText);
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      const toolLabel = message.tool_call_id ? `[Tool result ${message.tool_call_id}]` : '[Tool result]';
+      appendNormalizedMessage(normalized, 'user', `${toolLabel}\n${toText(message.content)}`);
+      continue;
+    }
+
+    if (message.role === 'user') {
+      appendNormalizedMessage(normalized, 'user', toText(message.content));
+    }
+  }
+
+  return normalized;
 }
 
 // ── Multi-turn agent loop ───────────────────────────────────────────
@@ -541,6 +1015,9 @@ async function agentLoop(parsed) {
     if (saved?.messages && saved.messages.length > 0) {
       sessionId = parsed.resume;
       messages = trimSessionContext(saved.messages, MAX_SESSION_CHARS);
+      if (isLmStudio || isOllama) {
+        messages = normalizeResumeMessages(messages);
+      }
       resumed = true;
       debug(`Resumed session ${sessionId} with ${messages.length} messages (original: ${saved.messages.length})`);
     } else {
@@ -572,6 +1049,8 @@ You have access to these tools to complete your task:
 - **Bash**: Run a shell command. Call with {"command": "..."}
 - **Glob**: Find files by pattern. Call with {"pattern": "src/**/*.ts"}
 - **Grep**: Search text in files. Call with {"pattern": "searchTerm", "path": "dir"}
+    - **WebSearch**: Search the public web. Call with {"query": "latest lm studio docs"}
+    - **WebFetch**: Fetch a public URL. Call with {"url": "https://docs.example.com/page"}
 
 Use these tools to explore the codebase, make changes, and verify your work.
 When your task is complete, provide a clear summary of what you did.`;
@@ -581,7 +1060,7 @@ When your task is complete, provide a clear summary of what you did.`;
   }
 
   // Always add the new user prompt (this is the new task for this turn)
-  messages.push({ role: 'user', content: parsed.prompt || 'Please respond briefly.' });
+  appendNormalizedMessage(messages, 'user', parsed.prompt || 'Please respond briefly.');
 
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   let finalResult = '';
@@ -611,7 +1090,7 @@ When your task is complete, provide a clear summary of what you did.`;
 
     let payload;
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -625,7 +1104,7 @@ When your task is complete, provide a clear summary of what you did.`;
           supportsTools = false;
           delete requestBody.tools;
           delete requestBody.tool_choice;
-          const retryResponse = await fetch(`${baseUrl}/chat/completions`, {
+          const retryResponse = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers,
             body: JSON.stringify(requestBody),
@@ -661,36 +1140,38 @@ When your task is complete, provide a clear summary of what you did.`;
     const toolCalls = message?.tool_calls;
     const textContent = message?.content || '';
 
-    // Emit any text content as an assistant message
     if (textContent) {
-      const contentBlocks = [{ type: 'text', text: textContent }];
-
-      emit({
-        type: 'assistant',
-        message: {
-          id: `msg-${crypto.randomUUID()}`,
-          model,
-          role: 'assistant',
-          content: contentBlocks,
-        },
-      });
-
       finalResult = textContent;
     }
 
     // If no tool calls, we're done (model finished or doesn't support tools)
     // BUT first try to parse tool calls from the text response — some small
     // models write tool calls in their text instead of using function calling.
-    let effectiveToolCalls = toolCalls;
+    let effectiveToolCalls = normalizeToolCalls(toolCalls).filter((tc) => isKnownToolName(tc?.function?.name));
     if ((!toolCalls || toolCalls.length === 0) && textContent && supportsTools) {
       const parsed = parseToolCallsFromText(textContent);
       if (parsed.length > 0) {
         debug(`Parsed ${parsed.length} tool call(s) from text response (text-based fallback)`);
-        effectiveToolCalls = parsed;
+        effectiveToolCalls = normalizeToolCalls(parsed).filter((tc) => isKnownToolName(tc?.function?.name));
       }
     }
 
     if (!effectiveToolCalls || effectiveToolCalls.length === 0 || !supportsTools) {
+      messages.push({
+        role: 'assistant',
+        content: textContent || '',
+      });
+      if (textContent) {
+        emit({
+          type: 'assistant',
+          message: {
+            id: `msg-${crypto.randomUUID()}`,
+            model,
+            role: 'assistant',
+            content: [{ type: 'text', text: textContent }],
+          },
+        });
+      }
       break;
     }
 
@@ -699,7 +1180,7 @@ When your task is complete, provide a clear summary of what you did.`;
     const toolResultMessages = [];
 
     for (const tc of effectiveToolCalls) {
-      const toolName = tc.function?.name;
+      const toolName = normalizeToolName(tc.function?.name);
       let toolInput;
       try {
         toolInput = JSON.parse(tc.function?.arguments || '{}');
@@ -718,7 +1199,7 @@ When your task is complete, provide a clear summary of what you did.`;
 
       // Execute the tool
       debug(`Executing tool: ${toolName}(${JSON.stringify(toolInput).slice(0, 200)})`);
-      const toolResult = executeTool(toolName, toolInput);
+      const toolResult = await executeTool(toolName, toolInput);
 
       // Emit tool_result event as a user message (orchestrator expects this)
       emit({
@@ -763,7 +1244,7 @@ When your task is complete, provide a clear summary of what you did.`;
     messages.push({
       role: 'assistant',
       content: textContent || null,
-      tool_calls: effectiveToolCalls,
+      tool_calls: normalizeToolCalls(effectiveToolCalls),
     });
 
     // Add tool result messages to conversation history

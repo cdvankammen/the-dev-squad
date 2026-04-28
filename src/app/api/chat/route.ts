@@ -183,7 +183,7 @@ function validateExecutableProvider(modelProvider?: string): string | null {
   const adapter = getModelAdapter(modelProvider);
   if (!adapter) return `Unknown model provider: ${modelProvider}`;
   if (typeof adapter.supportsExecution === 'function' && adapter.supportsExecution() === false) {
-    return `Provider '${modelProvider}' is discovery-only in this repo right now. Use 'openclaude' to reach LM Studio/Ollama/OpenAI-compatible backends, or use 'claude-cli' / 'occ'.`;
+    return `Provider '${modelProvider}' can be discovered in this repo but does not expose executable runner sessions for direct chat/pipeline turns.`;
   }
   if (!adapter.isAvailable()) {
     return `Provider '${modelProvider}' is not available in this environment.`;

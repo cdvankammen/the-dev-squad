@@ -267,3 +267,13 @@ export async function captureCommandOutput(
     return '';
   }
 }
+
+/**
+ * Resolve a path inside the repo workspace even when the current working
+ * directory is a generated Build project (for example orchestrated pipeline runs).
+ */
+export function resolveWorkspacePath(...segments: string[]): string {
+  const cwdCandidate = resolve(process.cwd(), ...segments);
+  if (existsSync(cwdCandidate)) return cwdCandidate;
+  return resolve(__dirname, '..', '..', '..', ...segments);
+}

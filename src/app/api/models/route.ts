@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import getModelAdapter from '@/lib/modelAdapters';
+import { getBaseUrlForProvider } from '@/lib/providerConfig';
 
 const DEFAULT_MODELS: Record<string, string[]> = {
   'claude-cli': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
@@ -23,8 +24,17 @@ export async function GET(req: Request) {
     let models: string[] = [];
     let usedDiscovery = false;
     let fallbackUsed = false;
+    let resolvedBaseUrl: string | null = null;
     // Enriched model info with host labels (only for CCR with ?details=true)
     let modelDetails: Array<{ model: string; label: string; provider: string; host: string; port: string }> | null = null;
+
+    if (['lm-studio', 'ollama', 'openwebui', 'openai-compat', 'openai-http'].includes(provider)) {
+      try {
+        resolvedBaseUrl = getBaseUrlForProvider(provider);
+      } catch {
+        resolvedBaseUrl = null;
+      }
+    }
 
     if (adapter && typeof (adapter as any).discoverModels === 'function') {
       try {
@@ -45,7 +55,7 @@ export async function GET(req: Request) {
     // fall back to environment/defaults when discovery did not run or
     // failed to produce results.
     if (usedDiscovery && (!models || models.length === 0)) {
-      return NextResponse.json({ provider, models: [], modelCount: 0, usedDiscovery, fallbackUsed: false });
+      return NextResponse.json({ provider, models: [], modelCount: 0, usedDiscovery, fallbackUsed: false, resolvedBaseUrl });
     }
 
     if ((!models || models.length === 0)) {
@@ -65,7 +75,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ provider, models, modelCount: models.length, usedDiscovery, fallbackUsed, ...(modelDetails ? { modelDetails } : {}) });
+    return NextResponse.json({ provider, models, modelCount: models.length, usedDiscovery, fallbackUsed, resolvedBaseUrl, ...(modelDetails ? { modelDetails } : {}) });
   } catch (err) {
     return NextResponse.json({ provider: 'unknown', models: [], modelCount: 0, error: String(err) }, { status: 500 });
   }

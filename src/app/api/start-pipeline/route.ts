@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: `Unknown model provider: ${modelProvider}` }, { status: 400 });
     }
     if (typeof adapter.supportsExecution === 'function' && adapter.supportsExecution() === false) {
-      return NextResponse.json({ success: false, error: `Provider '${modelProvider}' is discovery-only in this repo right now. Use openclaude/occ/claude-cli for executable pipeline runs.` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Provider '${modelProvider}' can be discovered in this repo but does not expose executable runner sessions for the pipeline.` }, { status: 400 });
     }
     if (!adapter.isAvailable()) {
       return NextResponse.json({ success: false, error: `Provider '${modelProvider}' is not available in this environment.` }, { status: 400 });

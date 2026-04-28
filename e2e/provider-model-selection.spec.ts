@@ -8,12 +8,13 @@
  * 4. "Discovered only" toggle persists to localStorage
  */
 import { test, expect } from '@playwright/test';
-import { gotoHome, waitForProviders, selectProvider } from './helpers';
+import { ensureManualMode, gotoHome, waitForProviders, selectProvider } from './helpers';
 
 test.describe('Provider / Model selection (Main page)', () => {
   test.beforeEach(async ({ page }) => {
     await gotoHome(page);
     await waitForProviders(page);
+    await ensureManualMode(page);
   });
 
   test('page loads without JS errors', async ({ page }) => {
@@ -23,7 +24,7 @@ test.describe('Provider / Model selection (Main page)', () => {
     await waitForProviders(page);
     // Allow benign warnings but no uncaught errors from our code
     const appErrors = errors.filter(
-      (e) => !e.includes('ResizeObserver') && !e.includes('Hydration'),
+      (e) => !e.includes('ResizeObserver'),
     );
     expect(appErrors).toHaveLength(0);
   });

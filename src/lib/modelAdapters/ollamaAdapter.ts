@@ -15,6 +15,7 @@ import {
   commandExists,
   extractLikelyModelIds,
   ModelAdapter,
+  resolveWorkspacePath,
   spawnLocal,
 } from './ModelAdapter';
 import { getBaseUrlForProvider, getProviderConfig } from '../providerConfig';
@@ -82,7 +83,10 @@ export default class OllamaAdapter implements ModelAdapter {
     // If a non-localhost host has been saved, consider it available (remote Ollama)
     if (cfg.host && cfg.host !== 'localhost' && cfg.host !== '127.0.0.1') return true;
     if (cfg.baseUrl) return true;
-    return false;
+    // Like LM Studio, Ollama is commonly used as a localhost HTTP runtime even
+    // when the CLI is not on PATH for the Next.js process. Treat it as
+    // available-by-attempt so the UI does not force a fallback to claude-cli.
+    return true;
   }
 
   supportsExecution(): boolean {
@@ -94,7 +98,7 @@ export default class OllamaAdapter implements ModelAdapter {
    * OpenAI-compatible endpoint as OPENAI_BASE_URL.
    */
   spawn(opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
-    const shimPath = path.join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const shimPath = resolveWorkspacePath('scripts', 'http-runner-shim.mjs');
     const baseUrl = getOpenAIBaseUrl();
 
     const env: NodeJS.ProcessEnv = {

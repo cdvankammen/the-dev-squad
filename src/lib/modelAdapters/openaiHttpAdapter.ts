@@ -5,12 +5,18 @@ import {
   captureCommandOutput,
   extractLikelyModelIds,
   ModelAdapter,
+  resolveWorkspacePath,
   spawnLocal,
 } from './ModelAdapter';
+import { getBaseUrlForProvider, getProviderConfig } from '../providerConfig';
 
 function normalizeBaseUrl(base?: string): string {
   const normalized = (base || 'https://api.openai.com/v1').trim();
   return normalized.endsWith('/v1') ? normalized : `${normalized.replace(/\/$/, '')}/v1`;
+}
+
+function getConfiguredBaseUrl(): string {
+  return normalizeBaseUrl(process.env.OPENAI_BASE_URL || getBaseUrlForProvider('openai-http'));
 }
 
 function splitModelEnv(value?: string): string[] {
@@ -26,7 +32,14 @@ export default class OpenAIHttpAdapter implements ModelAdapter {
   readonly label = 'OpenAI-Compatible HTTP';
 
   isAvailable(): boolean {
-    return Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL);
+    const cfg = getProviderConfig('openai-http');
+    return Boolean(
+      process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_BASE_URL ||
+      cfg.apiKey ||
+      cfg.baseUrl ||
+      (cfg.host && cfg.host !== 'api.openai.com')
+    );
   }
 
   supportsExecution(): boolean {
@@ -34,12 +47,14 @@ export default class OpenAIHttpAdapter implements ModelAdapter {
   }
 
   spawn(opts: AdapterSpawnOptions): ChildProcessWithoutNullStreams {
-    const shimPath = path.join(process.cwd(), 'scripts', 'http-runner-shim.mjs');
+    const shimPath = resolveWorkspacePath('scripts', 'http-runner-shim.mjs');
+    const cfg = getProviderConfig('openai-http');
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       ...opts.env,
       MODEL_PROVIDER: this.id,
-      OPENAI_BASE_URL: normalizeBaseUrl(process.env.OPENAI_BASE_URL),
+      OPENAI_BASE_URL: getConfiguredBaseUrl(),
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY || cfg.apiKey || 'openai-http',
     };
     return spawnLocal(process.execPath, [shimPath, '--provider', this.id, ...opts.args], {
       cwd: opts.cwd,
@@ -49,20 +64,22 @@ export default class OpenAIHttpAdapter implements ModelAdapter {
   }
 
   async discoverModels(): Promise<string[]> {
-    const baseUrl = normalizeBaseUrl(process.env.OPENAI_BASE_URL);
+    const cfg = getProviderConfig('openai-http');
+    const baseUrl = getConfiguredBaseUrl();
+    const apiKey = process.env.OPENAI_API_KEY || cfg.apiKey || '';
     const args = [
       '-sS',
       '-H',
       'Content-Type: application/json',
-      ...(process.env.OPENAI_API_KEY
-        ? ['-H', `Authorization: Bearer ${process.env.OPENAI_API_KEY}`]
+      ...(apiKey
+        ? ['-H', `Authorization: Bearer ${apiKey}`]
         : []),
       `${baseUrl}/models`,
     ];
 
     const output = await captureCommandOutput('curl', args);
     const discovered = output ? extractLikelyModelIds(output) : [];
-    const configured = new Set<string>(splitModelEnv(process.env.OPENAI_MODEL));
+    const configured = new Set<string>(splitModelEnv(process.env.OPENAI_MODEL || process.env.OPENAI_COMPAT_MODEL));
 
     return Array.from(new Set([...discovered, ...configured])).sort();
   }
