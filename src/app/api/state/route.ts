@@ -3,6 +3,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { NextRequest, NextResponse } from 'next/server';
 import { EMPTY_RUNTIME } from '@/lib/pipeline-runtime';
+import { findLatestProject } from '@/lib/projectLocator';
 
 const BUILDS_DIR = join(homedir(), 'Builds');
 const STAGING_DIR = join(BUILDS_DIR, '.staging');
@@ -10,6 +11,8 @@ const MANUAL_DIR = join(BUILDS_DIR, '.manual');
 
 const EMPTY_STATE = {
   concept: '', projectDir: '', currentPhase: 'concept', securityMode: 'fast', runGoal: 'full-build', runFinalAudit: false, stopAfterPhase: 'none', pipelineStatus: 'idle', activeAgent: '',
+  selectedModel: '', selectedProvider: 'claude',
+  agentModels: {},
   agentStatus: { A: 'idle', B: 'idle', C: 'idle', D: 'idle', E: 'idle', S: 'idle' },
   sessions: {}, buildComplete: false,
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: 0 },
@@ -45,21 +48,10 @@ function normalizeState(data: Record<string, unknown>) {
     auditFindings: Array.isArray(data.auditFindings) ? data.auditFindings : [],
     auditDeployPending: data.auditDeployPending === true,
     auditActionInFlight: data.auditActionInFlight === true,
+    selectedModel: typeof data.selectedModel === 'string' ? data.selectedModel : EMPTY_STATE.selectedModel,
+    selectedProvider: typeof data.selectedProvider === 'string' ? data.selectedProvider : EMPTY_STATE.selectedProvider,
+    agentModels: data.agentModels && typeof data.agentModels === 'object' ? data.agentModels : {},
   };
-}
-
-function findLatestProject(): string | null {
-  try {
-    const dirs = readdirSync(BUILDS_DIR)
-      .filter(name => name !== '.staging' && name !== '.manual')
-      .map(name => join(BUILDS_DIR, name))
-      .filter(p => {
-        try { return statSync(p).isDirectory() && statSync(join(p, 'pipeline-events.json')).isFile(); }
-        catch { return false; }
-      })
-      .sort((a, b) => statSync(join(b, 'pipeline-events.json')).mtimeMs - statSync(join(a, 'pipeline-events.json')).mtimeMs);
-    return dirs[0] || null;
-  } catch { return null; }
 }
 
 export async function GET(req: NextRequest) {

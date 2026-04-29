@@ -9,7 +9,17 @@ import { LunarOfficeScene } from '@/components/mission/LunarOfficeScene';
 import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
-import { readProviderSelection, writeProviderSelection } from '@/lib/providerStorage';
+import {
+  readAgentModelOverrides,
+  readModelSelection,
+  readProviderRuntimeSettings,
+  readProviderSelection,
+  writeAgentModelOverride,
+  writeModelSelection,
+  writeProviderRuntimeSettings,
+  writeProviderSelection,
+  type ProviderRuntimeSettings,
+} from '@/lib/providerStorage';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
 
 const AGENT_NAMES: Record<AgentId, string> = {
@@ -45,6 +55,22 @@ const FALLBACK_PROVIDER_OPTIONS = [
 type ProviderOption = { id: string; label: string; description?: string; available?: boolean };
 type ModelOption = { id: string; label: string };
 
+const HTTP_PROVIDER_IDS = new Set(['lm-studio', 'ollama', 'openwebui', 'openai-compat', 'openai-http']);
+
+function normalizeModelOptions(options: ModelOption[]): ModelOption[] {
+  const seen = new Set<string>();
+  const result: ModelOption[] = [];
+
+  for (const option of options) {
+    const id = String(option?.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push({ id, label: String(option?.label || id).trim() || id });
+  }
+
+  return result;
+}
+
 const MANUAL_ROLES: Record<string, string> = {
   A: 'Software planning & architecture',
   B: 'Code review & finding gaps',
@@ -57,9 +83,15 @@ const MANUAL_ROLES: Record<string, string> = {
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedProvider, setSelectedProvider] = useState(() => readProviderSelection('claude'));
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [selectedModel, setSelectedModel] = useState(() => readModelSelection('claude') || 'claude-sonnet-4-6');
+  const [agentModelOverrides, setAgentModelOverrides] = useState<Record<string, string>>(() => readAgentModelOverrides('claude'));
+  const [providerRuntime, setProviderRuntime] = useState<ProviderRuntimeSettings>(() => readProviderRuntimeSettings('claude'));
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [providerConfigSaving, setProviderConfigSaving] = useState(false);
+  const [providerConfigStatus, setProviderConfigStatus] = useState('');
+  const [providerConfigVersion, setProviderConfigVersion] = useState(0);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
@@ -68,7 +100,14 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+  } = usePipelineState({
+    pollInterval: 400,
+    mode,
+    model: selectedModel,
+    provider: selectedProvider,
+    agentModels: agentModelOverrides,
+    workingDir: providerRuntime.workingDir,
+  });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -91,6 +130,44 @@ export default function PipelinePage() {
   useEffect(() => {
     writeProviderSelection(selectedProvider);
   }, [selectedProvider]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const local = readProviderRuntimeSettings(selectedProvider);
+    setAgentModelOverrides(readAgentModelOverrides(selectedProvider));
+    setSelectedModel(readModelSelection(selectedProvider));
+    setProviderRuntime(local);
+    setProviderConfigStatus('');
+
+    async function loadProviderConfig() {
+      try {
+        const res = await fetch(`/api/provider-config?id=${encodeURIComponent(selectedProvider)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const config = data?.config;
+        if (!config || cancelled) return;
+
+        const merged: ProviderRuntimeSettings = {
+          host: typeof config.host === 'string' ? config.host : local.host,
+          port: typeof config.port === 'number' ? String(config.port) : local.port,
+          apiKey: typeof config.apiKey === 'string' ? config.apiKey : local.apiKey,
+          baseUrl: typeof config.baseUrl === 'string' ? config.baseUrl : local.baseUrl,
+          workingDir: local.workingDir,
+        };
+        setProviderRuntime(merged);
+        writeProviderRuntimeSettings(selectedProvider, merged);
+      } catch {
+        // ignore connection-setting fetch issues
+      }
+    }
+
+    loadProviderConfig();
+    return () => { cancelled = true; };
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    writeProviderRuntimeSettings(selectedProvider, providerRuntime);
+  }, [selectedProvider, providerRuntime]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,25 +194,40 @@ export default function PipelinePage() {
   useEffect(() => {
     let cancelled = false;
     async function loadModels() {
+      setModelsLoading(true);
       try {
-        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
+        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}&_=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
-        const nextModels: ModelOption[] = Array.isArray(data?.models)
+        const nextModels = normalizeModelOptions(Array.isArray(data?.models)
           ? data.models.map((model: { id: string; label?: string }) => ({ id: model.id, label: model.label || model.id }))
-          : [];
+          : []);
         if (cancelled) return;
         setModelOptions(nextModels);
-        const nextDefault = data?.provider?.defaultModel || nextModels[0]?.id || selectedModel;
-        const nextSelected = nextModels.some((model) => model.id === selectedModel) ? selectedModel : nextDefault;
+        const storedModel = readModelSelection(selectedProvider);
+        const nextDefault = data?.provider?.defaultModel || nextModels[0]?.id || storedModel || selectedModel;
+        const nextSelected = nextModels.some((model) => model.id === storedModel)
+          ? storedModel
+          : nextModels.some((model) => model.id === selectedModel)
+            ? selectedModel
+            : nextDefault;
         setSelectedModel(nextSelected);
-      } catch {}
+        writeModelSelection(selectedProvider, nextSelected);
+      } catch {
+        if (!cancelled) {
+          setModelOptions(normalizeModelOptions(selectedModel ? [{ id: selectedModel, label: selectedModel }] : []));
+        }
+      } finally {
+        if (!cancelled) setModelsLoading(false);
+      }
     }
     loadModels();
     return () => { cancelled = true; };
-  }, [selectedProvider]);
+  }, [selectedProvider, providerConfigVersion]);
 
   const isPipeline = mode === 'pipeline';
+  const providerNeedsConnection = HTTP_PROVIDER_IDS.has(selectedProvider);
+  const providerNeedsApiKey = selectedProvider === 'openwebui' || selectedProvider === 'openai-http' || selectedProvider === 'openai-compat';
   const hasLivePipelineActivity = Boolean(state.activeAgent || state.runtime?.activeTurn || pendingApproval);
   const pipelineRunning = isPipeline && (state.pipelineStatus === 'running' || (!state.buildComplete && (pipelineStarted || hasLivePipelineActivity)));
   const pipelinePaused = isPipeline && state.pipelineStatus === 'paused';
@@ -265,6 +357,61 @@ export default function PipelinePage() {
     setPanelInputs({ A: '', B: '', C: '', D: '' });
   }
 
+  async function handleSaveProviderConfig() {
+    if (!providerNeedsConnection) return;
+    const host = String(providerRuntime.host || '').trim();
+    const portText = String(providerRuntime.port || '').trim();
+    const port = Number(portText);
+    if (!host || !Number.isFinite(port) || port <= 0) {
+      setProviderConfigStatus('Enter a valid host and port first.');
+      return;
+    }
+
+    setProviderConfigSaving(true);
+    setProviderConfigStatus('');
+    try {
+      const res = await fetch('/api/provider-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedProvider,
+          host,
+          port,
+          apiKey: String(providerRuntime.apiKey || '').trim(),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || 'Failed to save provider settings');
+      }
+      setProviderConfigStatus('Saved provider connection settings.');
+      setProviderConfigVersion((value) => value + 1);
+    } catch (err) {
+      setProviderConfigStatus(err instanceof Error ? err.message : 'Failed to save provider settings');
+    } finally {
+      setProviderConfigSaving(false);
+    }
+  }
+
+  function handleRefreshModels() {
+    setProviderConfigVersion((value) => value + 1);
+  }
+
+  function handleModelChange(value: string) {
+    setSelectedModel(value);
+    writeModelSelection(selectedProvider, value);
+  }
+
+  function updateAgentModelOverride(agentId: AgentId, value: string) {
+    setAgentModelOverrides((prev) => {
+      const next = { ...prev };
+      if (value) next[agentId] = value;
+      else delete next[agentId];
+      return next;
+    });
+    writeAgentModelOverride(selectedProvider, agentId, value || null);
+  }
+
   async function handlePanelSend(id: AgentId) {
     const msg = panelInputs[id]?.trim();
     if (sendingAgents.has(id) || !msg) return;
@@ -368,6 +515,9 @@ export default function PipelinePage() {
   const supervisorRecommendation = isPipeline ? getSupervisorRecommendation(state, pendingApproval) : null;
   const supervisorUpdate = isPipeline ? getSupervisorUpdate(state, pendingApproval) : null;
   const executionPathStatus = isPipeline ? getExecutionPathStatus(state) : null;
+  const availableModelOptions = normalizeModelOptions(
+    modelOptions.length ? modelOptions : (selectedModel ? [{ id: selectedModel, label: selectedModel }] : [])
+  );
   const modePosture = isPipeline
     ? {
         title: 'Pipeline Guardrails',
@@ -418,18 +568,112 @@ export default function PipelinePage() {
 
                 <div>
                   <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Model</div>
-                  <select
-                    aria-label="Model"
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                  >
-                    {(modelOptions.length ? modelOptions : [{ id: selectedModel, label: selectedModel }]).map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-[#121522]">
-                        {opt.label}
-                      </option>
+                  <div className="flex items-center gap-2">
+                    <select
+                      aria-label="Model"
+                      value={selectedModel}
+                      onChange={(e) => handleModelChange(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                    >
+                      {availableModelOptions.map((opt) => (
+                        <option key={`${selectedProvider}-${opt.id}`} value={opt.id} className="bg-[#121522]">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleRefreshModels}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                    >
+                      {modelsLoading ? 'Refreshing…' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
+                {providerNeedsConnection && (
+                  <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-2.5 md:col-span-2">
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Provider Runtime</div>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <input
+                        aria-label="Provider host"
+                        value={providerRuntime.host || ''}
+                        onChange={(e) => setProviderRuntime((prev) => ({ ...prev, host: e.target.value }))}
+                        placeholder="Host or IP"
+                        className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                      />
+                      <input
+                        aria-label="Provider port"
+                        value={providerRuntime.port || ''}
+                        onChange={(e) => setProviderRuntime((prev) => ({ ...prev, port: e.target.value }))}
+                        placeholder="Port"
+                        inputMode="numeric"
+                        className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                      />
+                      {providerNeedsApiKey ? (
+                        <input
+                          aria-label="Provider API key"
+                          type="password"
+                          value={providerRuntime.apiKey || ''}
+                          onChange={(e) => setProviderRuntime((prev) => ({ ...prev, apiKey: e.target.value }))}
+                          placeholder="API key"
+                          className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                        />
+                      ) : <div className="hidden md:block" />}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveProviderConfig}
+                        disabled={providerConfigSaving}
+                        className="rounded-lg border border-blue-500/30 bg-blue-500/15 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-blue-100 transition hover:border-blue-400/50 hover:bg-blue-500/20 disabled:opacity-50"
+                      >
+                        {providerConfigSaving ? 'Saving…' : 'Save connection'}
+                      </button>
+                      {providerConfigStatus ? (
+                        <div className="text-[10px] text-slate-400">{providerConfigStatus}</div>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-2.5 md:col-span-2">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Workspace Root</div>
+                  <input
+                    aria-label="Workspace root"
+                    value={providerRuntime.workingDir || ''}
+                    onChange={(e) => setProviderRuntime((prev) => ({ ...prev, workingDir: e.target.value }))}
+                    placeholder="/absolute/path/for/this/provider"
+                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                  />
+                  <div className="text-[10px] text-slate-400">
+                    Pipeline runs create a fresh project subfolder inside this root. Manual chats use this directory directly.
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-2.5 md:col-span-2">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Per-Agent Models</div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {(['S', 'A', 'B', 'C', 'D', 'E'] as AgentId[]).map((agentId) => (
+                      <label key={agentId} className="block space-y-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                          {agentId} · {AGENT_NAMES[agentId]}
+                        </div>
+                        <select
+                          aria-label={`${agentId} model override`}
+                          value={agentModelOverrides[agentId] || ''}
+                          onChange={(e) => updateAgentModelOverride(agentId, e.target.value)}
+                          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                        >
+                          <option value="" className="bg-[#121522]">Use provider default ({selectedModel})</option>
+                          {availableModelOptions.map((opt) => (
+                            <option key={`${agentId}-${selectedProvider}-${opt.id}`} value={opt.id} className="bg-[#121522]">
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -510,7 +754,7 @@ export default function PipelinePage() {
                 <select
                   aria-label="Model"
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
+                  onChange={(e) => handleModelChange(e.target.value)}
                   className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
                 >
                   {(modelOptions.length ? modelOptions : [{ id: selectedModel, label: selectedModel }]).map((opt) => (

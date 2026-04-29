@@ -65,7 +65,7 @@ const ROLE_C = join(BUILDUI_DIR, 'role-c.md');
 const ROLE_D = join(BUILDUI_DIR, 'role-d.md');
 const ROLE_E = join(BUILDUI_DIR, 'role-e.md');
 
-const MODEL = 'claude-opus-4-6';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 // Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
@@ -205,6 +205,9 @@ interface PipelineState {
   projectDir: string;
   currentPhase: string;
   securityMode: 'fast' | 'strict';
+  selectedModel?: string;
+  selectedProvider?: string;
+  agentModels?: Record<string, string>;
   runGoal: 'full-build' | 'plan-only';
   runFinalAudit: boolean;
   stopAfterPhase: 'none' | 'plan-review';
@@ -250,6 +253,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditFindings: Array.isArray(existing.auditFindings) ? existing.auditFindings : [],
     auditDeployPending: existing.auditDeployPending === true,
     auditActionInFlight: existing.auditActionInFlight === true,
+    selectedModel: typeof existing.selectedModel === 'string' ? existing.selectedModel : undefined,
+    selectedProvider: typeof existing.selectedProvider === 'string' ? existing.selectedProvider : undefined,
+    agentModels: existing.agentModels && typeof existing.agentModels === 'object' ? existing.agentModels : {},
   };
 } else {
   // Fresh start — but preserve any existing events (concept-phase conversation)
@@ -259,6 +265,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
   let existingRunGoal = 'full-build';
   let existingStopAfterPhase = 'none';
   let existingRunFinalAudit = false;
+  let existingSelectedModel: string | undefined;
+  let existingSelectedProvider: string | undefined;
+  let existingAgentModels: Record<string, string> = {};
   if (existsSync(eventsFile)) {
     try {
       const existing = JSON.parse(readFileSync(eventsFile, 'utf8'));
@@ -268,6 +277,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
       existingRunGoal = existing.runGoal || existingRunGoal;
       existingStopAfterPhase = existing.stopAfterPhase || existingStopAfterPhase;
       existingRunFinalAudit = existing.runFinalAudit === true;
+      if (typeof existing.selectedModel === 'string') existingSelectedModel = existing.selectedModel;
+      if (typeof existing.selectedProvider === 'string') existingSelectedProvider = existing.selectedProvider;
+      if (existing.agentModels && typeof existing.agentModels === 'object') existingAgentModels = existing.agentModels as Record<string, string>;
       if (existing.securityMode === 'strict') securityMode = 'strict';
     } catch {}
   }
@@ -276,6 +288,9 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     projectDir,
     currentPhase: 'concept',
     securityMode,
+    selectedModel: existingSelectedModel,
+    selectedProvider: existingSelectedProvider,
+    agentModels: existingAgentModels,
     runGoal: existingRunGoal === 'plan-only' ? 'plan-only' : 'full-build',
     runFinalAudit: existingRunFinalAudit,
     stopAfterPhase: existingStopAfterPhase === 'plan-review' ? 'plan-review' : 'none',
@@ -351,6 +366,11 @@ function saveSession(agent: string, sessionId: string) {
 
 function shouldStopAfterPlanReview() {
   return state.stopAfterPhase === 'plan-review' || state.runGoal === 'plan-only';
+}
+
+function shouldUseCompactPlanningWriteSession(): boolean {
+  const provider = state.selectedProvider || 'claude';
+  return provider !== 'claude';
 }
 
 function startActiveTurn(agent: AgentId, prompt: string, autoResumeCount: number, resume?: string) {
@@ -436,6 +456,15 @@ function agentRoleLabel(agent: AgentId): string {
   }
 }
 
+function buildWorkspaceGuardPrompt(): string {
+  return [
+    `WORKSPACE BOUNDARY: ${projectDir}`,
+    `Stay strictly within ${projectDir}.`,
+    `Do not read, write, create, rename, delete, launch, or run commands outside ${projectDir}.`,
+    'You may create folders and files inside this workspace only.',
+  ].join('\n');
+}
+
 async function runClaudeTurn(
   agent: AgentId,
   prompt: string,
@@ -458,12 +487,18 @@ async function runClaudeTurn(
 }> {
   return new Promise((resolve, reject) => {
     const safePrompt = prompt.startsWith('-') ? 'User says: ' + prompt : prompt;
+    const guardedPrompt = `${buildWorkspaceGuardPrompt()}\n\n${safePrompt}`;
     const effort = AGENT_EFFORT[agent] || 'high';
+    const activeModel = (state.agentModels && typeof state.agentModels[agent] === 'string' && state.agentModels[agent].trim())
+      ? state.agentModels[agent].trim()
+      : (state.selectedModel || DEFAULT_MODEL);
+    const activeProvider = state.selectedProvider || 'claude';
     const runnerOpts = {
-      prompt: safePrompt,
+      prompt: guardedPrompt,
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: MODEL,
+      model: activeModel,
+      provider: activeProvider,
       roleFile: opts.role,
       resume: opts.resume,
       jsonSchema: opts.jsonSchema,
@@ -476,13 +511,21 @@ async function runClaudeTurn(
             join(BUILDUI_DIR, 'checklist-template.md'),
           ]
         : undefined,
+      extraEnv: activeProvider === 'lm-studio'
+        ? {
+            ...process.env,
+            HTTP_SHIM_REQUEST_TIMEOUT_MS: process.env.HTTP_SHIM_REQUEST_TIMEOUT_MS || '300000',
+            HTTP_SHIM_MAX_SESSION_CHARS: process.env.HTTP_SHIM_MAX_SESSION_CHARS || '16000',
+            HTTP_SHIM_TOOL_OUTPUT_LIMIT: process.env.HTTP_SHIM_TOOL_OUTPUT_LIMIT || '8000',
+          }
+        : undefined,
       forceHost: opts.forceHost,
     };
     const child = runner.spawn(runnerOpts);
     const usedDocker = child.backend === 'docker';
     const canFallbackToHost = usedDocker && runner.supportsHostFallback(runnerOpts);
 
-    startActiveTurn(agent, safePrompt, opts.autoResumeCount || 0, opts.resume);
+    startActiveTurn(agent, guardedPrompt, opts.autoResumeCount || 0, opts.resume);
 
     if (usedDocker) {
       emit('system', state.currentPhase, 'status', `Running ${agentRoleLabel(agent)} in isolated Docker worker.`);
@@ -1016,7 +1059,7 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
       emitSupervisor('planning', 'The planner is finishing the research pass from the saved session.');
     }
 
-    const researchResult = await claude('A', buildPlanningResearchPrompt(phase0Context, concept), {
+    const researchResult = await claude('A', buildPlanningResearchPrompt(projectDir, phase0Context, concept), {
       role: ROLE_A,
       resume: options?.resumeStalled ? resumeSession : undefined,
       resumePrompt: buildPlanningResearchResumePrompt(),
@@ -1030,16 +1073,20 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
 
   if (step === 'write') {
     const restartWriteFromSummary =
-      options?.resumeStalled &&
       !existsSync(existingPlanPath) &&
-      hasPlanningWriteStarted(state.events);
+      (
+        (options?.resumeStalled && hasPlanningWriteStarted(state.events)) ||
+        shouldUseCompactPlanningWriteSession()
+      );
     const researchSummary = restartWriteFromSummary ? extractPlanningResearchSummary(state.events) : null;
 
     emit('A', 'planning', 'status', 'Writing plan.md...');
     emitSupervisor(
       'planning',
       restartWriteFromSummary
-        ? 'The planner got stuck in the old write session, so I am restarting the write step from the verified research summary instead of looping the same resume again.'
+        ? shouldUseCompactPlanningWriteSession() && !options?.resumeStalled
+          ? 'The planner is switching into a compact write-only turn that carries forward the verified research summary without dragging the full research transcript into the drafting step.'
+          : 'The planner got stuck in the old write session, so I am restarting the write step from the verified research summary instead of looping the same resume again.'
         : 'Research is complete. The planner is drafting plan.md now in a dedicated write step so we do not lose the work between research and output.'
     );
 
@@ -1370,8 +1417,7 @@ async function runDeployStep(aSession: string): Promise<string> {
     const files = readdirSync(projectDir);
     const htmlFile = files.find((file) => file === 'index.html') || files.find((file) => file.endsWith('.html'));
     if (htmlFile) {
-      execFileSync('open', [join(projectDir, htmlFile)]);
-      emit('system', 'complete', 'status', `Opened ${htmlFile}`);
+      emit('system', 'complete', 'status', `HTML output ready: ${htmlFile}`);
     }
   } catch {}
 
@@ -1652,12 +1698,18 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
           'Code review is complete. Now test the code.',
           'Run it. Confirm it actually works — not just that it looks right.',
           `Test all functionality against the plan at ${join(projectDir, 'plan.md')}`,
+          'Use ONLY Read and read-only Bash commands for this test pass.',
+          'Do NOT use ToolSearch, WebSearch, WebFetch, browser/MCP tools, Write, Edit, or the Agent tool.',
+          'Do NOT open GUI apps such as `open index.html`.',
+          'Do NOT start local servers, listeners, background jobs, or long-running processes.',
+          'If you need a multi-line runtime check, prefer `python3 - <<\'PY\'` or `node <<\'EOF\'` over brittle `node -e` quoting, and do not write any files.',
           '',
           'Respond with ONLY a JSON object: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
         ].join('\n')
       : [
           'C has applied fixes for the test failures.',
           'Re-test the code.',
+          'Use ONLY Read and read-only Bash commands. No browser/MCP tools, ToolSearch, or file writes.',
           'Respond with ONLY a JSON object: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
         ].join('\n');
 
@@ -1833,6 +1885,11 @@ async function run() {
 run().catch((err) => {
   try {
     setPipelineStatus('failed');
+    state.activeAgent = '';
+    for (const key of Object.keys(state.agentStatus || {})) {
+      state.agentStatus[key] = 'idle';
+    }
+    flush();
     emitSupervisor(state.currentPhase || 'concept', `The run failed in ${state.currentPhase || 'concept'}. Ask me what happened and I can help decide whether to resume, stop, or reset.`);
   } catch {}
   console.error('\n[FATAL]', err.message);

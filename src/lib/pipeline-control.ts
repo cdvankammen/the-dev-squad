@@ -2,9 +2,9 @@ import { spawn, execFileSync, execSync } from 'child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
+import { BUILDS_DIR, findLatestProject, writeLatestProject } from '@/lib/projectLocator';
 
 export const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
-export const BUILDS_DIR = join(homedir(), 'Builds');
 export const STAGING_DIR = join(BUILDS_DIR, '.staging');
 
 export type SecurityMode = 'fast' | 'strict';
@@ -25,27 +25,28 @@ function writeJson(file: string, data: Record<string, unknown>) {
   writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-export function findLatestProject(): string | null {
-  try {
-    const dirs = readdirSync(BUILDS_DIR)
-      .filter((name) => name !== '.staging' && name !== '.manual')
-      .map((name) => join(BUILDS_DIR, name))
-      .filter((projectDir) => {
-        try {
-          return statSync(projectDir).isDirectory() && statSync(join(projectDir, 'pipeline-events.json')).isFile();
-        } catch {
-          return false;
-        }
-      })
-      .sort(
-        (a, b) =>
-          statSync(join(b, 'pipeline-events.json')).mtimeMs - statSync(join(a, 'pipeline-events.json')).mtimeMs
-      );
+function expandHomePath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith('~/')) return join(homedir(), input.slice(2));
+  return input;
+}
 
-    return dirs[0] || null;
-  } catch {
-    return null;
+function resolveWorkspaceRoot(workingDir?: string): string {
+  const raw = String(workingDir || '').trim();
+  if (!raw) return BUILDS_DIR;
+  return resolve(expandHomePath(raw));
+}
+
+function allocateFreshProjectDir(projectName: string, workspaceRoot = BUILDS_DIR): string {
+  const baseDir = join(workspaceRoot, projectName);
+  if (!existsSync(baseDir)) return baseDir;
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = join(workspaceRoot, `${projectName}-${suffix}`);
+    if (!existsSync(candidate)) return candidate;
   }
+
+  return join(workspaceRoot, `${projectName}-${Date.now()}`);
 }
 
 export function readPipelineState(projectDir: string): Record<string, unknown> | null {
@@ -96,6 +97,10 @@ export function startPipelineRun(options: {
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
   runFinalAudit?: boolean;
+  model?: string;
+  provider?: string;
+  agentModels?: Record<string, string>;
+  workingDir?: string;
 }): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean } {
   const securityMode = options.securityMode === 'strict' ? 'strict' : 'fast';
   const permissionMode: PermissionMode = options.permissionMode === 'plan' ? 'plan'
@@ -133,7 +138,9 @@ export function startPipelineRun(options: {
     .replace(/^-|-$/g, '')
     .slice(0, 40) || 'new-build';
 
-  const projectDir = join(BUILDS_DIR, projectName);
+  const workspaceRoot = resolveWorkspaceRoot(options.workingDir);
+  mkdirSync(workspaceRoot, { recursive: true });
+  const projectDir = allocateFreshProjectDir(projectName, workspaceRoot);
   mkdirSync(projectDir, { recursive: true });
 
   const templates = ['checklist-template.md', 'build-plan-template.md'];
@@ -159,10 +166,21 @@ export function startPipelineRun(options: {
   stagingState.permissionMode = permissionMode;
   stagingState.runGoal = runGoal;
   stagingState.runFinalAudit = runFinalAudit;
+  stagingState.workspaceRoot = workspaceRoot;
+  if (typeof options.model === 'string' && options.model.trim()) stagingState.selectedModel = options.model.trim();
+  if (typeof options.provider === 'string' && options.provider.trim()) stagingState.selectedProvider = options.provider.trim();
+  if (options.agentModels && typeof options.agentModels === 'object') {
+    stagingState.agentModels = Object.fromEntries(
+      Object.entries(options.agentModels)
+        .map(([agent, value]) => [agent, String(value || '').trim()])
+        .filter(([, value]) => Boolean(value))
+    );
+  }
   stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';
   stagingState.pipelineStatus = 'running';
   stagingState.resumeAction = 'none';
   writeJson(join(projectDir, 'pipeline-events.json'), stagingState);
+  writeLatestProject(projectDir);
 
   try {
     rmSync(STAGING_DIR, { recursive: true, force: true });

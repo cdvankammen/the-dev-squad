@@ -1,0 +1,8 @@
+[00:00:01.037] Server  LOG     
+[00:00:01.037] Server  LOG       We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
+[00:00:01.038] Server  LOG       The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+[00:00:01.038] Server  LOG       	- include was updated to add '.next-instances/port-3003/types/**/*.ts'
+[00:00:01.038] Server  LOG       	- include was updated to add '.next-instances/port-3003/dev/types/**/*.ts'
+[00:00:01.038] Server  LOG     
+[00:00:01.142] Server  LOG     ✓ Ready in 928ms

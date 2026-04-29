@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'fs';
 import { spawn as nodeSpawn } from 'child_process';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
@@ -26,6 +26,7 @@ import {
 } from '@/lib/pipeline-control';
 import { parseSupervisorIntent } from '@/lib/supervisor-intents';
 import { getProviderDefinition } from '@/lib/provider-catalog';
+import { findLatestProject as findLatestProjectTracked } from '@/lib/projectLocator';
 
 const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 const BUILDS_DIR = join(homedir(), 'Builds');
@@ -116,18 +117,30 @@ function getStagingState(): Record<string, unknown> {
   return fresh;
 }
 
+function expandHomePath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith('~/')) return join(homedir(), input.slice(2));
+  return input;
+}
+
+function resolveWorkingDirectory(input: unknown, fallbackDir: string): string {
+  const raw = String(input || '').trim();
+  const target = raw ? resolve(expandHomePath(raw)) : fallbackDir;
+  mkdirSync(target, { recursive: true });
+  return target;
+}
+
+function buildWorkspaceGuard(workspaceDir: string): string {
+  return [
+    `WORKSPACE BOUNDARY: ${workspaceDir}`,
+    `Stay strictly within ${workspaceDir}.`,
+    `Do not read, write, create, rename, delete, launch, or run commands outside ${workspaceDir}.`,
+    'You may create folders and files inside this workspace only.',
+  ].join('\n');
+}
+
 function findLatestProject(): string | null {
-  try {
-    const dirs = readdirSync(BUILDS_DIR)
-      .filter((name: string) => name !== '.staging' && name !== '.manual')
-      .map((name: string) => join(BUILDS_DIR, name))
-      .filter((p: string) => {
-        try { return statSync(p).isDirectory() && statSync(join(p, 'pipeline-events.json')).isFile(); }
-        catch { return false; }
-      })
-      .sort((a: string, b: string) => statSync(join(b, 'pipeline-events.json')).mtimeMs - statSync(join(a, 'pipeline-events.json')).mtimeMs);
-    return dirs[0] || null;
-  } catch { return null; }
+  return findLatestProjectTracked();
 }
 
 function writeState(file: string, state: Record<string, unknown>) {
@@ -483,11 +496,12 @@ function streamOpenCode(
 
 // ── Manual mode ─────────────────────────────────────────────────────
 
-function handleManual(agent: string, message: string, model: string, provider: string) {
+function handleManual(agent: string, message: string, model: string, provider: string, workingDir?: string) {
   const eventsFile = join(MANUAL_DIR, 'manual-state.json');
   const state = getManualState();
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
+  const manualProjectDir = resolveWorkingDirectory(workingDir, MANUAL_DIR);
 
   // Set agent active
   const agentStatus = (state.agentStatus as Record<string, string>) || {};
@@ -508,17 +522,18 @@ function handleManual(agent: string, message: string, model: string, provider: s
   writeFileSync(eventsFile, JSON.stringify(state, null, 2));
 
   const safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
+  const guardedMessage = [buildWorkspaceGuard(manualProjectDir), '', safeMessage].join('\n\n');
   const resolvedProvider = getProviderDefinition(provider).id;
 
   if (resolvedProvider === 'opencode') {
     const prompt = sessionId
-      ? safeMessage
-      : `${MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A}\n\n${safeMessage}`;
+      ? guardedMessage
+      : `${MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A}\n\n${guardedMessage}`;
 
     return streamOpenCode(
       {
         prompt,
-        projectDir: MANUAL_DIR,
+        projectDir: manualProjectDir,
         model,
         sessionId: sessionId || undefined,
         agent,
@@ -531,9 +546,10 @@ function handleManual(agent: string, message: string, model: string, provider: s
 
   return streamClaude(
     {
-      prompt: safeMessage,
-      projectDir: MANUAL_DIR,
+      prompt: guardedMessage,
+      projectDir: manualProjectDir,
       model,
+      provider,
       resume: sessionId || undefined,
       systemPrompt: sessionId ? undefined : (MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A),
     },
@@ -548,6 +564,10 @@ function handleManual(agent: string, message: string, model: string, provider: s
 function handlePipeline(
   agent: string,
   message: string,
+  model?: string,
+  provider?: string,
+  agentModels?: Record<string, string>,
+  workingDir?: string,
   defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean }
 ) {
   let projectDir: string;
@@ -580,7 +600,28 @@ function handlePipeline(
 
   let state: Record<string, unknown> = {};
   try { state = JSON.parse(readFileSync(eventsFile, 'utf8')); } catch {}
+  if (typeof model === 'string' && model.trim()) state.selectedModel = model.trim();
+  if (typeof provider === 'string' && provider.trim()) state.selectedProvider = provider.trim();
+  if (typeof workingDir === 'string' && workingDir.trim()) {
+    state.requestedWorkingDir = resolveWorkingDirectory(workingDir, BUILDS_DIR);
+  }
+  if (agentModels && typeof agentModels === 'object') {
+    state.agentModels = Object.fromEntries(
+      Object.entries(agentModels)
+        .map(([agentId, value]) => [agentId, String(value || '').trim()])
+        .filter(([, value]) => Boolean(value))
+    );
+  }
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
+  const selectedModel = typeof state.selectedModel === 'string' && state.selectedModel.trim()
+    ? state.selectedModel.trim()
+    : 'claude-sonnet-4-6';
+  const selectedProvider = typeof state.selectedProvider === 'string' && state.selectedProvider.trim()
+    ? state.selectedProvider.trim()
+    : 'claude';
+  const activeWorkspace = projectDir === STAGING_DIR
+    ? (typeof state.requestedWorkingDir === 'string' && state.requestedWorkingDir.trim() ? state.requestedWorkingDir.trim() : projectDir)
+    : projectDir;
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
 
@@ -614,6 +655,10 @@ function handlePipeline(
           permissionMode: effectivePermissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
           runGoal: effectiveRunGoal,
           runFinalAudit: effectiveRunFinalAudit,
+          model: selectedModel,
+          provider: selectedProvider,
+          agentModels: state.agentModels as Record<string, string> | undefined,
+          workingDir: typeof state.requestedWorkingDir === 'string' ? state.requestedWorkingDir : undefined,
         });
 
         if (!result.success) {
@@ -727,6 +772,8 @@ function handlePipeline(
       writeState(eventsFile, state);
 
       const conceptContext = [
+        buildWorkspaceGuard(activeWorkspace),
+        '',
         `[CONCEPT PHASE — no pipeline running yet]`,
         `Current concept: ${state.concept}`,
         '',
@@ -738,12 +785,28 @@ function handlePipeline(
         message,
       ].join('\n');
 
+      if (selectedProvider === 'opencode') {
+        return streamOpenCode(
+          {
+            prompt: conceptContext,
+            projectDir,
+            model: selectedModel,
+            sessionId: sessionId || undefined,
+            agent,
+          },
+          eventsFile,
+          agent,
+          sessionId
+        );
+      }
+
       return streamClaude(
         {
           prompt: conceptContext,
           projectDir,
           pipelineDir: BUILDUI_DIR,
-          model: 'claude-opus-4-6',
+          model: selectedModel,
+          provider: selectedProvider,
           roleFile: ROLE_FILES.S,
           resume: sessionId || undefined,
           pipelineAgent: 'S',
@@ -771,6 +834,8 @@ function handlePipeline(
   if (agent === 'S') {
     const pendingApproval = projectDir !== STAGING_DIR ? readPendingApproval(projectDir) : null;
     finalMessage = [
+      buildWorkspaceGuard(activeWorkspace),
+      '',
       buildSupervisorSnapshot(state, pendingApproval),
       '',
       'Use the live snapshot above as the source of truth for the team state.',
@@ -782,17 +847,35 @@ function handlePipeline(
   }
   if (buildComplete) {
     finalMessage = '[The build pipeline has completed. The user is chatting with you directly for post-build work — reviewing, fixing, or modifying the project.]\n\n' + finalMessage;
+  } else if (agent !== 'S') {
+    finalMessage = [buildWorkspaceGuard(activeWorkspace), '', finalMessage].join('\n\n');
   }
 
   appendUserEvent(state, agent, message);
   writeState(eventsFile, state);
+
+  if (selectedProvider === 'opencode') {
+    return streamOpenCode(
+      {
+        prompt: finalMessage,
+        projectDir,
+        model: selectedModel,
+        sessionId: sessionId || undefined,
+        agent,
+      },
+      eventsFile,
+      agent,
+      sessionId
+    );
+  }
 
   return streamClaude(
     {
       prompt: finalMessage,
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: 'claude-opus-4-6',
+      model: selectedModel,
+      provider: selectedProvider,
       roleFile,
       resume: sessionId || undefined,
       pipelineAgent: agent as PipelineAgentId,
@@ -807,12 +890,22 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { agent, message, mode, model, provider, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
+  const { agent, message, mode, model, provider, agentModels, workingDir, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
+
+  const normalizedAgentModels = agentModels && typeof agentModels === 'object'
+    ? Object.fromEntries(
+        Object.entries(agentModels)
+          .map(([agentId, value]) => [agentId, String(value || '').trim()])
+          .filter(([, value]) => Boolean(value))
+      )
+    : undefined;
+
+  const effectiveModel = normalizedAgentModels?.[agent] || model || 'claude-sonnet-4-6';
 
   if (mode === 'manual') {
-    return handleManual(agent, message, model || 'claude-sonnet-4-6', provider || 'claude');
+    return handleManual(agent, message, effectiveModel, provider || 'claude', workingDir);
   }
-  return handlePipeline(agent, message, {
+  return handlePipeline(agent, message, model, provider, normalizedAgentModels, workingDir, {
     securityMode: securityMode === 'strict' ? 'strict' : 'fast',
     permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
     runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',

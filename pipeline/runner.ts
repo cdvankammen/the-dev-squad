@@ -1,8 +1,9 @@
 import { execFileSync, spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { getBaseUrlForProvider, getProviderConfig } from '../src/lib/providerConfig.ts';
 
 export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
@@ -13,6 +14,7 @@ export interface RunnerOptions {
   projectDir: string;
   pipelineDir?: string;
   model: string;
+  provider?: string;
   roleFile?: string;
   systemPrompt?: string;
   resume?: string;
@@ -44,6 +46,7 @@ export interface Runner {
 const DOCKER_IMAGE = 'dev-squad-agent:latest';
 const KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
 const DOCKER_WORKSPACE_ROOT = join(tmpdir(), 'devsquad-docker-workspaces');
+const REPO_ROOT = resolve(import.meta.dirname || __dirname, '..');
 const DOCKER_SYNC_BACK_EXCLUDES = new Set([
   '.claude',
   '.git',
@@ -390,6 +393,25 @@ export function buildDockerArgs(
 
 export class HostRunner implements Runner {
   spawn(opts: RunnerOptions): SpawnedRunnerChild {
+    if (opts.provider && opts.provider !== 'claude') {
+      const shimPath = join(REPO_ROOT, 'scripts', 'http-runner-shim.mjs');
+      const providerId = opts.provider;
+      const base = getBaseUrlForProvider(providerId);
+      const openAIBase = base.endsWith('/v1') ? base : `${base}/v1`;
+      const cfg = getProviderConfig(providerId);
+      return withBackend(nodeSpawn(process.execPath, [shimPath, '--provider', providerId, ...buildClaudeArgs(opts)], {
+        cwd: opts.projectDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...buildRunnerEnv(opts),
+          MODEL_PROVIDER: providerId,
+          ...(providerId === 'lm-studio' ? { LM_STUDIO_BASE_URL: base } : {}),
+          OPENAI_BASE_URL: openAIBase,
+          OPENAI_API_KEY: process.env.LM_STUDIO_API_KEY || cfg.apiKey || providerId,
+        },
+      }), 'host');
+    }
+
     return withBackend(nodeSpawn('claude', buildClaudeArgs(opts), {
       cwd: opts.projectDir,
       stdio: ['pipe', 'pipe', 'pipe'],

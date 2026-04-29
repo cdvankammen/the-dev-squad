@@ -59,6 +59,20 @@ export function writeProviderSelection(providerId: string) {
   removeStoredValue(STORAGE_KEYS.provider);
 }
 
+export function readModelSelection(providerId?: string, fallback = '') {
+  return readStoredValue(getModelStorageKey(providerId)) || fallback;
+}
+
+export function writeModelSelection(providerId: string | undefined, modelId?: string | null) {
+  const key = getModelStorageKey(providerId);
+  const normalized = String(modelId ?? '').trim();
+  if (normalized) {
+    writeStoredValue(key, normalized);
+    return;
+  }
+  removeStoredValue(key);
+}
+
 export interface ProviderRuntimeSettings {
   host?: string;
   port?: string;

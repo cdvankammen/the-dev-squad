@@ -3,7 +3,7 @@
   "version": "0.4.3",
   "private": false,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node ./scripts/dev-server.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

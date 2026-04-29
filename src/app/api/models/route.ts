@@ -10,15 +10,20 @@ export async function GET(req: NextRequest) {
       ...model,
       providerLabel: provider.label,
     }));
+    const defaultModel = provider.defaultModel || models[0]?.id || '';
 
     return NextResponse.json({
       provider: {
         id: provider.id,
         label: provider.label,
-        defaultModel: provider.defaultModel,
+        defaultModel,
         mode: provider.mode,
       },
       models,
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
     });
   } catch (error) {
     return NextResponse.json(
@@ -32,7 +37,12 @@ export async function GET(req: NextRequest) {
         models: [],
         error: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
     );
   }
 }

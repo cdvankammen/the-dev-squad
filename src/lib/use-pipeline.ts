@@ -62,6 +62,9 @@ export interface PipelineState {
   agentStatus: Record<AgentId, string>;
   sessions: Record<string, string>;
   buildComplete: boolean;
+  selectedModel?: string;
+  selectedProvider?: string;
+  agentModels?: Record<string, string>;
   usage: TokenUsage;
   runtime?: PipelineRuntimeState;
   events: PipelineEvent[];
@@ -112,6 +115,8 @@ interface UsePipelineOptions {
   mode: AppMode;
   model: string;
   provider: string;
+  agentModels?: Record<string, string>;
+  workingDir?: string;
 }
 
 interface SendChatOptions {
@@ -121,7 +126,7 @@ interface SendChatOptions {
   runFinalAudit?: boolean;
 }
 
-export function usePipelineState({ pollInterval = 400, mode, model, provider }: UsePipelineOptions) {
+export function usePipelineState({ pollInterval = 400, mode, model, provider, agentModels, workingDir }: UsePipelineOptions) {
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,6 +162,8 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider }: 
         mode,
         model,
         provider,
+        agentModels,
+        workingDir,
         securityMode: options?.securityMode,
         permissionMode: options?.permissionMode,
         runGoal: options?.runGoal,
@@ -164,16 +171,25 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider }: 
       }),
     });
     return res.json();
-  }, [mode, model, provider]);
+  }, [mode, model, provider, agentModels, workingDir]);
 
   const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
     const res = await fetch('/api/start-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ securityMode, permissionMode, runGoal, runFinalAudit: runFinalAudit === true }),
+      body: JSON.stringify({
+        securityMode,
+        permissionMode,
+        runGoal,
+        runFinalAudit: runFinalAudit === true,
+        model,
+        provider,
+        agentModels,
+        workingDir,
+      }),
     });
     return res.json();
-  }, []);
+  }, [model, provider, agentModels, workingDir]);
 
   const resumePipeline = useCallback(async () => {
     const res = await fetch('/api/resume-pipeline', {
