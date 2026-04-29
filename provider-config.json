@@ -1,0 +1,14 @@
+{
+  "lm-studio": {
+    "id": "lm-studio",
+    "host": "10.2.0.90",
+    "port": 1234,
+    "apiKey": ""
+  },
+  "ollama": {
+    "id": "ollama",
+    "host": "localhost",
+    "port": 11434,
+    "apiKey": ""
+  }
+}
