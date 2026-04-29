@@ -1104,7 +1104,7 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
       emitSupervisor('planning', 'The planner is finishing the research pass from the saved session.');
     }
 
-    const researchResult = await claude('A', buildPlanningResearchPrompt(phase0Context, concept), {
+    const researchResult = await claude('A', buildPlanningResearchPrompt(projectDir, phase0Context, concept), {
       role: ROLE_A,
       resume: options?.resumeStalled ? resumeSession : undefined,
       resumePrompt: buildPlanningResearchResumePrompt(),

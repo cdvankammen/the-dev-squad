@@ -37,6 +37,25 @@ const PHASE_PROGRESS: Record<string, number> = {
   deploy: 95, complete: 100,
 };
 
+function progressWidthClass(progress: number): string {
+  switch (progress) {
+    case 5: return 'w-[5%]';
+    case 20: return 'w-[20%]';
+    case 35: return 'w-[35%]';
+    case 55: return 'w-[55%]';
+    case 70: return 'w-[70%]';
+    case 85: return 'w-[85%]';
+    case 90: return 'w-[90%]';
+    case 95: return 'w-[95%]';
+    case 100: return 'w-full';
+    default: return 'w-0';
+  }
+}
+
+function toggleButtonClass(active: boolean, activeBgClass: string): string {
+  return `px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${active ? `${activeBgClass} text-white` : 'text-[#555] hover:text-[#888]'}`;
+}
+
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Opus 4.6' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
@@ -416,9 +435,9 @@ export default function PipelinePage() {
   return (
     <div className="p-4 space-y-4">
       {/* Hero: Animation + Feed (65%) + Dashboard (35%) */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '65% 1fr' }}>
+      <div className="grid grid-cols-[65%_1fr] gap-4">
         {/* Office Scene + Live Feed below it — height driven by dashboard */}
-        <div className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]" style={{ height: 0, minHeight: '100%' }}>
+        <div className="flex h-0 min-h-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]">
           <div className="p-2">
             <LunarOfficeScene
               activePhase={phase}
@@ -492,13 +511,11 @@ export default function PipelinePage() {
               <div className="flex rounded-lg border border-white/10 bg-white/5">
                 <button
                   onClick={() => setMode('pipeline')}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${isPipeline ? 'bg-violet-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                  style={{ borderRadius: '7px 0 0 7px' }}
+                  className={`${toggleButtonClass(isPipeline, 'bg-violet-600')} rounded-l-md`}
                 >Pipeline</button>
                 <button
                   onClick={() => setMode('manual')}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${!isPipeline ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                  style={{ borderRadius: '0 7px 7px 0' }}
+                  className={`${toggleButtonClass(!isPipeline, 'bg-blue-600')} rounded-r-md`}
                 >Manual</button>
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -599,14 +616,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedSecurityMode('fast')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedSecurityMode === 'fast' ? 'bg-emerald-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedSecurityMode === 'fast', 'bg-emerald-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Fast</button>
                     <button
                       onClick={() => setSelectedSecurityMode('strict')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedSecurityMode === 'strict' ? 'bg-amber-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedSecurityMode === 'strict', 'bg-amber-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Strict</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -625,19 +640,17 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedPermissionMode('auto')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'auto' ? 'bg-emerald-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'auto', 'bg-emerald-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Auto</button>
                     <button
                       onClick={() => setSelectedPermissionMode('plan')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'plan' ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'plan', 'bg-blue-600')} disabled:cursor-not-allowed disabled:opacity-50`}
                     >Plan</button>
                     <button
                       onClick={() => setSelectedPermissionMode('dangerously-skip-permissions')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'dangerously-skip-permissions' ? 'bg-red-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'dangerously-skip-permissions', 'bg-red-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Skip</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -658,14 +671,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedRunGoal('full-build')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunGoal === 'full-build' ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedRunGoal === 'full-build', 'bg-blue-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Full Build</button>
                     <button
                       onClick={() => setSelectedRunGoal('plan-only')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunGoal === 'plan-only' ? 'bg-violet-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedRunGoal === 'plan-only', 'bg-violet-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Plan Only</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -684,14 +695,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedRunFinalAudit(false)}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${!selectedRunFinalAudit ? 'bg-slate-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(!selectedRunFinalAudit, 'bg-slate-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Off</button>
                     <button
                       onClick={() => setSelectedRunFinalAudit(true)}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunFinalAudit ? 'bg-rose-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedRunFinalAudit, 'bg-rose-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >On</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -748,7 +757,7 @@ export default function PipelinePage() {
                   <span>{progress}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
-                  <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-all duration-700" style={{ width: `${progress}%` }} />
+                  <div className={`h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-all duration-700 ${progressWidthClass(progress)}`} />
                 </div>
               </div>
             </>
@@ -774,7 +783,7 @@ export default function PipelinePage() {
                         : status === 'done'
                         ? 'border-red-500 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
                         : 'border-[#252530] text-[#444]'
-                    }`} style={{ background: '#0e0e16' }}>{id}</div>
+                    } bg-[#0e0e16]`}>{id}</div>
                     <span className="text-[9px] text-slate-500">{AGENT_NAMES[id]}</span>
                     <span className={`text-[8px] font-bold uppercase ${isActive ? 'text-emerald-400' : status === 'done' ? 'text-red-400' : 'text-[#333]'}`}>{status}</span>
                   </div>
@@ -951,21 +960,16 @@ export default function PipelinePage() {
           When the security audit starts, E is added on the right (same size as S)
           and the center columns squish to accommodate. */}
       <div
-        className="grid gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a]"
-        style={{
-          gridTemplateColumns: auditHasStarted ? '25% 1fr 1fr 25%' : '30% 1fr 1fr',
-          gridTemplateRows: '1fr 1fr',
-          height: '100vh',
-        }}
+        className={`grid h-screen grid-rows-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] ${auditHasStarted ? 'lg:[grid-template-columns:25%_1fr_1fr_25%]' : 'lg:[grid-template-columns:30%_1fr_1fr]'}`}
       >
         {/* S — Supervisor, spans both rows */}
-          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18]" style={{ gridRow: '1 / -1' }} onClick={() => setSelectedAgent('S')}>
+          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18] row-span-2" onClick={() => setSelectedAgent('S')}>
             <div className="flex items-center gap-3 border-b-2 border-emerald-600 px-3.5 py-2.5">
             <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] border-2 text-sm font-bold transition-all ${
               (state.agentStatus.S === 'active' || state.agentStatus.S === 'working')
                 ? 'border-emerald-500 text-emerald-400 shadow-[0_0_16px_rgba(34,197,94,0.25)]'
                 : 'border-[#252530] text-[#444]'
-            }`} style={{ background: '#0e0e16' }}>S</div>
+            } bg-[#0e0e16]`}>S</div>
             <div>
               <div className="text-[13px] font-semibold text-[#999]">Supervisor</div>
               <div className="text-[10px] text-[#444]">{isPipeline ? 'Recommended front door. Direct specialist chat still works.' : 'Oversight & diagnostics'}</div>
@@ -1108,7 +1112,7 @@ export default function PipelinePage() {
                     : status === 'done'
                     ? 'border-[#1a1a2a] text-[#333] opacity-50'
                     : 'border-[#252530] text-[#444]'
-                }`} style={{ background: '#0e0e16' }}>{id}</div>
+                } bg-[#0e0e16]`}>{id}</div>
                 <div className="flex-1">
                   <div className="text-[13px] font-semibold text-[#999]">{AGENT_NAMES[id]}</div>
                   <div className="text-[10px] text-[#444]">{AGENT_ROLES[id]}</div>
@@ -1239,7 +1243,7 @@ export default function PipelinePage() {
                 (state.agentStatus[expandedAgent] === 'active' || state.agentStatus[expandedAgent] === 'working')
                   ? 'border-emerald-500 text-emerald-400 shadow-[0_0_16px_rgba(34,197,94,0.25)]'
                   : 'border-[#252530] text-[#444]'
-              }`} style={{ background: '#0e0e16' }}>{expandedAgent}</div>
+              } bg-[#0e0e16]`}>{expandedAgent}</div>
               <div className="flex-1">
                 <div className="text-sm font-semibold text-white">{AGENT_NAMES[expandedAgent]}</div>
                 <div className="text-xs text-slate-500">{agentEvents(expandedAgent).length} events</div>

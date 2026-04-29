@@ -110,7 +110,49 @@ function replaceSmartQuotes(value) {
     return value.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
 }
 function removeComments(value) {
-    return value.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    let output = '';
+    let inString = false;
+    let quote = '';
+    let escape = false;
+    for (let i = 0; i < value.length; i += 1) {
+        const char = value[i];
+        if (inString) {
+            output += char;
+            if (escape) {
+                escape = false;
+            }
+            else if (char === '\\') {
+                escape = true;
+            }
+            else if (char === quote) {
+                inString = false;
+                quote = '';
+            }
+            continue;
+        }
+        if (char === '"' || char === "'" || char === '`') {
+            inString = true;
+            quote = char;
+            output += char;
+            continue;
+        }
+        if (char === '/' && value[i + 1] === '/') {
+            while (i < value.length && value[i] !== '\n')
+                i += 1;
+            if (i < value.length)
+                output += '\n';
+            continue;
+        }
+        if (char === '/' && value[i + 1] === '*') {
+            i += 2;
+            while (i < value.length - 1 && !(value[i] === '*' && value[i + 1] === '/'))
+                i += 1;
+            i += 1;
+            continue;
+        }
+        output += char;
+    }
+    return output;
 }
 function replacePythonLiterals(value) {
     return value

@@ -108,7 +108,7 @@ export function useProviderRuntime({
       } else {
         setModels([]);
       }
-      const nextDefault = String(data?.defaultModel || data?.provider?.defaultModel || selectedModel || '').trim();
+      const nextDefault = String(data?.defaultModel || data?.provider?.defaultModel || '').trim();
       const stored = readModelSelection(resolvedProvider, '');
       if (stored) {
         setSelectedModelState(stored);
@@ -118,7 +118,7 @@ export function useProviderRuntime({
     } catch {
       setModels([]);
     }
-  }, [selectedModel, selectedProvider]);
+  }, [selectedProvider]);
 
   useEffect(() => {
     const storedProvider = readProviderSelection(defaultProvider);

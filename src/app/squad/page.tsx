@@ -61,9 +61,9 @@ function cardTone(tone: 'neutral' | 'info' | 'warning' | 'success') {
   return 'border-white/10 bg-white/5 text-slate-200';
 }
 
-function segmentClass(active: boolean) {
+function segmentClass(active: boolean, activeBgClass: string) {
   return `flex-1 rounded-md px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider transition ${
-    active ? 'text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]' : 'text-slate-400 hover:text-slate-200'
+    active ? `${activeBgClass} text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]` : 'text-slate-400 hover:text-slate-200'
   }`;
 }
 
@@ -288,15 +288,13 @@ export default function SquadPage() {
                 <div className="flex rounded-lg border border-white/10 bg-white/5 p-1">
                   <button
                     onClick={() => setMode('pipeline')}
-                    className={segmentClass(isPipeline)}
-                    style={isPipeline ? { background: '#7c3aed' } : undefined}
+                    className={segmentClass(isPipeline, 'bg-violet-600')}
                   >
                     Pipeline
                   </button>
                   <button
                     onClick={() => setMode('manual')}
-                    className={segmentClass(!isPipeline)}
-                    style={!isPipeline ? { background: '#2563eb' } : undefined}
+                    className={segmentClass(!isPipeline, 'bg-blue-600')}
                   >
                     Manual
                   </button>
@@ -389,16 +387,14 @@ export default function SquadPage() {
                       <button
                         onClick={() => setSelectedSecurityMode('fast')}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(displayedSecurityMode === 'fast')} disabled:opacity-40`}
-                        style={displayedSecurityMode === 'fast' ? { background: '#166534' } : undefined}
+                        className={`${segmentClass(displayedSecurityMode === 'fast', 'bg-emerald-600')} disabled:opacity-40`}
                       >
                         Fast
                       </button>
                       <button
                         onClick={() => setSelectedSecurityMode('strict')}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(displayedSecurityMode === 'strict')} disabled:opacity-40`}
-                        style={displayedSecurityMode === 'strict' ? { background: '#b45309' } : undefined}
+                        className={`${segmentClass(displayedSecurityMode === 'strict', 'bg-amber-600')} disabled:opacity-40`}
                       >
                         Strict
                       </button>
@@ -411,16 +407,14 @@ export default function SquadPage() {
                       <button
                         onClick={() => setSelectedRunGoal('full-build')}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(displayedRunGoal === 'full-build')} disabled:opacity-40`}
-                        style={displayedRunGoal === 'full-build' ? { background: '#1d4ed8' } : undefined}
+                        className={`${segmentClass(displayedRunGoal === 'full-build', 'bg-blue-600')} disabled:opacity-40`}
                       >
                         Full
                       </button>
                       <button
                         onClick={() => setSelectedRunGoal('plan-only')}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(displayedRunGoal === 'plan-only')} disabled:opacity-40`}
-                        style={displayedRunGoal === 'plan-only' ? { background: '#7c3aed' } : undefined}
+                        className={`${segmentClass(displayedRunGoal === 'plan-only', 'bg-violet-600')} disabled:opacity-40`}
                       >
                         Plan Only
                       </button>
@@ -433,16 +427,14 @@ export default function SquadPage() {
                       <button
                         onClick={() => setSelectedRunFinalAudit(false)}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(!displayedRunFinalAudit)} disabled:opacity-40`}
-                        style={!displayedRunFinalAudit ? { background: '#475569' } : undefined}
+                        className={`${segmentClass(!displayedRunFinalAudit, 'bg-slate-600')} disabled:opacity-40`}
                       >
                         Off
                       </button>
                       <button
                         onClick={() => setSelectedRunFinalAudit(true)}
                         disabled={securityModeLocked}
-                        className={`${segmentClass(displayedRunFinalAudit)} disabled:opacity-40`}
-                        style={displayedRunFinalAudit ? { background: '#e11d48' } : undefined}
+                        className={`${segmentClass(displayedRunFinalAudit, 'bg-rose-600')} disabled:opacity-40`}
                       >
                         On
                       </button>

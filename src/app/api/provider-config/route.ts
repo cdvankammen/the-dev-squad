@@ -19,14 +19,6 @@ import {
 } from '@/lib/providerConfig';
 
 export type { ProviderConfig };
-export { getProviderConfig };
-
-export function getBaseUrlForProvider(id: string): string {
-  const cfg = getProviderConfig(id);
-  if (cfg.baseUrl) return cfg.baseUrl.replace(/\/$/, '');
-  const scheme = cfg.port === 443 ? 'https' : 'http';
-  return `${scheme}://${cfg.host}:${cfg.port}`;
-}
 
 // Defaults for each provider (for the API response / UI defaults)
 const PROVIDER_DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {

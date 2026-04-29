@@ -401,6 +401,8 @@ function streamOpenCode(
     let newSessionId = sessionId;
     let stderr = '';
     let diagnosticTail = '';
+  let exitCode: number | null = null;
+  let exitSignal: NodeJS.Signals | null = null;
 
     function noteDiagnostic(text: string) {
       if (!text) return;
@@ -496,10 +498,21 @@ function streamOpenCode(
       });
     }
 
-    child.on('close', async () => {
+    child.on('close', async (code, signal) => {
+      exitCode = typeof code === 'number' ? code : null;
+      exitSignal = signal ?? null;
       try {
         const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
         if (s.agentStatus) s.agentStatus[agent] = 'idle';
+        if (exitCode !== 0 || exitSignal) {
+          s.events.push({
+            time: new Date().toISOString(),
+            agent,
+            phase: s.currentPhase || 'concept',
+            type: 'failure',
+            text: `OpenCode exited with code ${exitCode ?? 'unknown'}${exitSignal ? ` (${exitSignal})` : ''}`,
+          });
+        }
         writeFileSync(eventsFile, JSON.stringify(s, null, 2));
       } catch {}
 
@@ -508,6 +521,13 @@ function streamOpenCode(
       }
 
       void diagnosticTail;
+      if (exitCode !== 0 || exitSignal) {
+        resolveResponse(NextResponse.json({
+          success: false,
+          error: `OpenCode exited with code ${exitCode ?? 'unknown'}${exitSignal ? ` (${exitSignal})` : ''}${stderr.trim() ? `: ${stderr.trim().slice(-1000)}` : ''}`,
+        }, { status: 500 }));
+        return;
+      }
       resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
     });
 
@@ -655,6 +675,10 @@ function handlePipeline(
           permissionMode: effectivePermissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
           runGoal: effectiveRunGoal,
           runFinalAudit: effectiveRunFinalAudit,
+          model: String(controlState.selectedModel || pipelineModel),
+          provider: String(controlState.selectedProvider || pipelineProvider),
+          workingDir: workspaceDir,
+          agentModels: (controlState.agentModels as Record<string, string> | undefined) || undefined,
         });
 
         if (!result.success) {
@@ -784,8 +808,8 @@ function handlePipeline(
           prompt: conceptContext,
           projectDir,
           pipelineDir: BUILDUI_DIR,
-            model: pipelineModel,
-            provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
+          model: pipelineModel,
+          provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
           roleFile: ROLE_FILES.S,
           resume: sessionId || undefined,
           pipelineAgent: 'S',
@@ -831,11 +855,11 @@ function handlePipeline(
 
   return streamClaude(
     {
-          prompt: [buildWorkspaceGuard(workspaceDir), '', finalMessage].join('\n\n'),
+      prompt: [buildWorkspaceGuard(workspaceDir), '', finalMessage].join('\n\n'),
       projectDir,
       pipelineDir: BUILDUI_DIR,
-          model: pipelineModel,
-          provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
+      model: pipelineModel,
+      provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
       roleFile,
       resume: sessionId || undefined,
       pipelineAgent: agent as PipelineAgentId,
