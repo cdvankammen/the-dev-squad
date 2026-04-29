@@ -1,14 +1,6 @@
 {
-  "servers": {
-    "devmemory-local": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "/Users/stillbulldog35/.vscode-insiders/extensions/abcstark.devmemory-ai-code-recall-1.0.4/dist/mcp-server.bundle.js"
-      ]
-    },
+  "mcpServers": {
     "vexp": {
-      "type": "stdio",
       "command": "/Users/stillbulldog35/.nvm/versions/node/v24.11.1/bin/node",
       "args": [
         "/Users/stillbulldog35/.vscode-insiders/extensions/vexp.vexp-vscode-2.0.12-darwin-arm64/dist/mcp-server.cjs"

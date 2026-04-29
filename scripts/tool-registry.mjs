@@ -1,176 +1,126 @@
-// Central tool registry for the http-runner shim (lightweight, runtime JS)
-// Exports: TOOL_DEFINITIONS, TOOL_REGISTRY, KNOWN_TOOL_NAMES,
-// normalizeToolName, normalizeToolCalls, isKnownToolName
+import toolSpecs from '../src/lib/tool-registry.json' with { type: 'json' };
 
-import crypto from 'node:crypto';
+const TOOL_SPECS = toolSpecs.map((spec) => ({
+  ...spec,
+  aliases: Array.from(new Set([...(spec.aliases || []), spec.id])),
+}));
 
-export const TOOL_DEFINITIONS = [
-  {
-    type: 'function',
-    function: {
-      name: 'Read',
-      description: 'Read the contents of a file. Use this to examine source code, configuration, documentation, or any text file.',
-      parameters: {
-        type: 'object',
-        properties: { file_path: { type: 'string', description: 'Absolute or relative path to the file to read.' } },
-        required: ['file_path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Write',
-      description: 'Write content to a file, creating it if necessary. Use this to create new files or completely replace existing file content.',
-      parameters: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Path to the file to write.' },
-          content: { type: 'string', description: 'The full content to write to the file.' },
-        },
-        required: ['file_path', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Edit',
-      description: 'Make a targeted edit to a file by replacing an exact string with a new string. The old_string must match exactly (including whitespace).',
-      parameters: {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'Path to the file to edit.' },
-          old_string: { type: 'string', description: 'The exact text to find and replace.' },
-          new_string: { type: 'string', description: 'The replacement text.' },
-        },
-        required: ['file_path', 'old_string', 'new_string'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Bash',
-      description: 'Run a shell command. Use this for installing packages, running tests, checking file structure, git operations, etc.',
-      parameters: {
-        type: 'object',
-        properties: { command: { type: 'string', description: 'The shell command to execute.' } },
-        required: ['command'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Glob',
-      description: 'Find files matching a glob pattern.',
-      parameters: {
-        type: 'object',
-        properties: { pattern: { type: 'string', description: 'Glob pattern to match files (e.g., "src/**/*.ts").' } },
-        required: ['pattern'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'Grep',
-      description: 'Search for a pattern in files.',
-      parameters: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: 'The text or regex pattern to search for.' },
-          path: { type: 'string', description: 'Directory or file path to search in. Defaults to current directory.' },
-        },
-        required: ['pattern'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'WebSearch',
-      description: 'Search the public web for current documentation, APIs, library usage, and reference material.',
-      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'WebFetch',
-      description: 'Fetch the contents of a public URL for source verification or documentation lookup.',
-      parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
-    },
-  },
-];
+function sanitizeToolToken(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
 
-const registry = {
-  Read: { id: 'Read', aliases: ['read', 'file.read', 'read_file', 'readfile'] },
-  Write: { id: 'Write', aliases: ['write', 'file.write', 'write_file'] },
-  Edit: { id: 'Edit', aliases: ['edit', 'file.edit', 'replace'] },
-  Bash: { id: 'Bash', aliases: ['bash', 'sh', 'shell', 'run'] },
-  Glob: { id: 'Glob', aliases: ['glob', 'find', 'ls', 'list'] },
-  Grep: { id: 'Grep', aliases: ['grep', 'search', 'rg'] },
-  WebSearch: { id: 'WebSearch', aliases: ['websearch', 'searchweb', 'web_search'] },
-  WebFetch: { id: 'WebFetch', aliases: ['webfetch', 'fetch', 'http_get', 'http-get'] },
-};
+function makeToolCallId() {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  return `tool-${randomId || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
 
-export const TOOL_REGISTRY = registry;
-export const KNOWN_TOOL_NAMES = Object.keys(registry);
-
-function canonicalFromAlias(lower) {
-  for (const [k, v] of Object.entries(registry)) {
-    if (k.toLowerCase() === lower) return k;
-    if (v.aliases && v.aliases.includes(lower)) return k;
+function normalizeToolArgumentPayload(value) {
+  if (typeof value === 'string') return value.trim() || '{}';
+  if (value == null) return '{}';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '{}';
   }
-  return null;
+}
+
+function extractToolCallArray(toolCalls) {
+  if (Array.isArray(toolCalls)) return toolCalls;
+  if (!toolCalls || typeof toolCalls !== 'object') return [];
+  if (Array.isArray(toolCalls.tool_calls)) return toolCalls.tool_calls;
+  if (Array.isArray(toolCalls.calls)) return toolCalls.calls;
+  if (Array.isArray(toolCalls.tools)) return toolCalls.tools;
+  if (toolCalls.function || toolCalls.name || toolCalls.tool) return [toolCalls];
+  return [];
+}
+
+const aliasMap = new Map();
+for (const spec of TOOL_SPECS) {
+  aliasMap.set(sanitizeToolToken(spec.id), spec.id);
+  for (const alias of spec.aliases) {
+    aliasMap.set(sanitizeToolToken(alias), spec.id);
+  }
+}
+
+export const TOOL_REGISTRY = Object.fromEntries(TOOL_SPECS.map((spec) => [spec.id, spec]));
+export const KNOWN_TOOL_NAMES = TOOL_SPECS.map((spec) => spec.id);
+export const TOOL_DEFINITIONS = TOOL_SPECS.map((spec) => ({
+  type: 'function',
+  function: {
+    name: spec.id,
+    description: spec.description,
+    parameters: spec.parameters,
+  },
+}));
+
+export function getToolRegistryEntry(name) {
+  const normalized = normalizeToolName(name);
+  return TOOL_REGISTRY[normalized] || null;
 }
 
 export function normalizeToolName(name) {
-  const raw = String(name || '');
-  if (!raw) return raw;
-  let cleaned = raw.trim();
-  // remove common noisy prefixes/suffixes
-  cleaned = cleaned.replace(/^[\[\(]*TOOL[_: -]*/i, '');
-  cleaned = cleaned.replace(/[^a-zA-Z0-9_\-]/g, '');
-  const lower = cleaned.toLowerCase();
-  const canonical = canonicalFromAlias(lower);
-  if (canonical) return canonical;
+  const raw = String(name ?? '').trim();
+  if (!raw) return '';
 
-  // try to extract an embedded canonical word
-  const m = lower.match(/(read|write|edit|bash|glob|grep|websearch|webfetch)/);
-  if (m) {
-    return Object.keys(registry).find((k) => k.toLowerCase() === m[1]) || cleaned;
+  const candidates = new Set();
+  const cleaned = raw
+    .replace(/^```(?:json|tool_call|tool_calls)?\s*/i, '')
+    .replace(/```$/i, '')
+    .replace(/^[\s"'`\[{(<]+|[\s"'`\]})>]+$/g, '')
+    .replace(/^(?:tool|tools|toolcall|toolcalls|function|functions|call)[\s_:\-./\\]*/i, '')
+    .trim();
+
+  candidates.add(raw);
+  if (cleaned) candidates.add(cleaned);
+  for (const segment of cleaned.split(/[\s/\\.:,_-]+/).filter(Boolean)) {
+    candidates.add(segment);
   }
-  return cleaned;
+
+  for (const candidate of candidates) {
+    const canonical = aliasMap.get(sanitizeToolToken(candidate));
+    if (canonical) return canonical;
+  }
+
+  const rawToken = sanitizeToolToken(cleaned || raw);
+  for (const [token, canonical] of aliasMap.entries()) {
+    if (token && rawToken.includes(token)) return canonical;
+  }
+
+  return cleaned || raw;
 }
 
 export function isKnownToolName(name) {
-  if (!name) return false;
-  return KNOWN_TOOL_NAMES.includes(normalizeToolName(name));
+  const normalized = normalizeToolName(name);
+  return KNOWN_TOOL_NAMES.includes(normalized);
 }
 
 export function normalizeToolCalls(toolCalls) {
-  if (!Array.isArray(toolCalls)) return [];
-  return toolCalls.map((tc) => {
-    const fn = (tc?.function || tc?.name) ? (tc.function || { name: tc.name, arguments: tc.arguments }) : {};
-    const name = normalizeToolName(fn.name || '');
-    const args = fn.arguments || tc.args || tc.arguments || '{}';
-    return {
-      id: tc.id || `tool-${crypto.randomUUID()}`,
-      function: {
-        name,
-        arguments: typeof args === 'string' ? args : JSON.stringify(args),
-      },
-    };
-  });
+  return extractToolCallArray(toolCalls)
+    .map((candidate) => {
+      const record = candidate && typeof candidate === 'object' ? candidate : {};
+      const fn = record.function && typeof record.function === 'object' ? record.function : {};
+      const name = normalizeToolName(fn.name ?? record.name ?? record.tool ?? '');
+      if (!name) return null;
+      const args = fn.arguments ?? record.arguments ?? record.input ?? record.params ?? record.args ?? {};
+      return {
+        id: typeof record.id === 'string' && record.id ? record.id : makeToolCallId(),
+        type: 'function',
+        function: {
+          name,
+          arguments: normalizeToolArgumentPayload(args),
+        },
+      };
+    })
+    .filter(Boolean);
 }
 
 export default {
   TOOL_DEFINITIONS,
   TOOL_REGISTRY,
   KNOWN_TOOL_NAMES,
+  getToolRegistryEntry,
   normalizeToolName,
   normalizeToolCalls,
   isKnownToolName,

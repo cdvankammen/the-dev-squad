@@ -58,3 +58,4 @@ devSquadMemory/workspace_vectors.jsonl
 
 # Provider endpoint config (local overrides — not committed)
 provider-config.json
+.vscode/autodev.json

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "idPrefix": "TASK",
-  "nextId": 2,
+  "nextId": 3,
   "states": [
     {
       "name": "Backlog",

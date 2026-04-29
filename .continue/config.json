@@ -1,0 +1,28 @@
+{
+  "customCommands": [
+    {
+      "name": "vexp-context",
+      "description": "Get vexp context for current task",
+      "prompt": "{{{ input }}}\n\nFirst, call run_pipeline with the above task description."
+    }
+  ],
+  "contextProviders": [
+    {
+      "name": "vexp",
+      "params": {
+        "mcpUrl": "http://localhost:7821"
+      }
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "vexp",
+      "command": "/Users/stillbulldog35/.nvm/versions/node/v24.11.1/bin/node",
+      "args": [
+        "/Users/stillbulldog35/.vscode-insiders/extensions/vexp.vexp-vscode-2.0.12-darwin-arm64/dist/mcp-server.cjs"
+      ],
+      "type": "stdio"
+    }
+  ],
+  "__vexp_version": "2.0.12"
+}

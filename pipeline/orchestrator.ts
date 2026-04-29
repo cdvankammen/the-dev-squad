@@ -113,26 +113,6 @@ function resolveRoleFile(roleFile: string, model: string): string {
   return roleFile;
 }
 
-function isAnthropicLikeModel(model: string): boolean {
-  const m = (model || '').toLowerCase();
-  return /^claude[-_]/.test(m) || ['haiku', 'sonnet', 'opus'].some((s) => m.includes(s));
-}
-
-function shouldPreferFreshFollowupSessions(provider?: string, model?: string): boolean {
-  const p = (provider || '').toLowerCase();
-  if (!p) return false;
-
-  if (['lm-studio', 'ollama', 'openwebui', 'open-webui', 'openai-compat'].includes(p)) {
-    return true;
-  }
-
-  if ((p === 'ccr' || p === 'claude-code-router') && model) {
-    return !isAnthropicLikeModel(model);
-  }
-
-  return false;
-}
-
 // Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
   A: 'high',   // Planner — follows template, high is enough
@@ -679,17 +659,14 @@ async function runClaudeTurn(
               detail = input.file_path as string;
             } else if (toolName === 'Write' && input.file_path) {
               desc = `WRITE ${basename(input.file_path as string)}`;
-              const content = stringifyToolPreview(input.content);
+              const content = (input.content as string) || '';
               detail = `${input.file_path}\n--- content (${content.split('\n').length} lines) ---\n${content.slice(0, 500)}${content.length > 500 ? '\n...' : ''}`;
             } else if (toolName === 'Edit' && input.file_path) {
               desc = `EDIT ${basename(input.file_path as string)}`;
-              const oldString = stringifyToolPreview(input.old_string);
-              const newString = stringifyToolPreview(input.new_string);
-              detail = `${input.file_path}\n- ${oldString.slice(0, 100)}\n+ ${newString.slice(0, 100)}`;
+              detail = `${input.file_path}\n- ${(input.old_string as string || '').slice(0, 100)}\n+ ${(input.new_string as string || '').slice(0, 100)}`;
             } else if (toolName === 'Bash' && input.command) {
-              const command = stringifyToolPreview(input.command);
-              desc = `BASH ${command.slice(0, 80)}`;
-              detail = command;
+              desc = `BASH ${(input.command as string).slice(0, 80)}`;
+              detail = input.command as string;
             } else if (toolName === 'Glob' && input.pattern) {
               desc = `GLOB ${input.pattern}`;
             } else if (toolName === 'Grep' && input.pattern) {
@@ -1058,17 +1035,6 @@ const AUDIT_SCHEMA = {
 
 // ── Helper ──────────────────────────────────────────────────────────
 
-function stringifyToolPreview(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value == null) return '';
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function parseSignal(result: string): Record<string, unknown> {
   // Try direct JSON parse
   try {
@@ -1128,8 +1094,6 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
   setAgent('A', 'active');
   const phase0Context = buildPhase0Context();
   const existingPlanPath = join(projectDir, 'plan.md');
-  const activePlanningModel = String(state.agentModels?.A || state.selectedModel || DEFAULT_MODEL);
-  const preferFreshFollowups = shouldPreferFreshFollowupSessions(state.selectedProvider, activePlanningModel);
   let step = detectPlanningStep(state.events, { planExists: existsSync(existingPlanPath) });
   const resumeSession = aSession || state.runtime.activeTurn?.sessionId || state.sessions.A;
 
@@ -1161,24 +1125,21 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
       options?.resumeStalled &&
       !existsSync(existingPlanPath) &&
       hasPlanningWriteStarted(state.events);
-    const useFreshWriteSession = restartWriteFromSummary || preferFreshFollowups;
-    const researchSummary = useFreshWriteSession ? extractPlanningResearchSummary(state.events) : null;
+    const researchSummary = restartWriteFromSummary ? extractPlanningResearchSummary(state.events) : null;
 
     emit('A', 'planning', 'status', 'Writing plan.md...');
     emitSupervisor(
       'planning',
       restartWriteFromSummary
         ? 'The planner got stuck in the old write session, so I am restarting the write step from the verified research summary instead of looping the same resume again.'
-        : useFreshWriteSession
-          ? 'Research is complete. Because this provider is more reliable with fresh artifact-driven turns than long resumed tool history, I am starting a fresh write step from the verified research summary to draft plan.md.'
         : 'Research is complete. The planner is drafting plan.md now in a dedicated write step so we do not lose the work between research and output.'
     );
 
     const writeResult = await claude('A', buildPlanningWritePrompt(projectDir, researchSummary), {
       role: ROLE_A,
-      resume: useFreshWriteSession ? undefined : (aSession || (options?.resumeStalled ? resumeSession : undefined)),
+      resume: restartWriteFromSummary ? undefined : (aSession || (options?.resumeStalled ? resumeSession : undefined)),
       resumePrompt: buildPlanningWriteResumePrompt(projectDir, researchSummary),
-      restartOnStall: useFreshWriteSession,
+      restartOnStall: restartWriteFromSummary,
     });
     aSession = writeResult.sessionId;
     saveSession('A', aSession);
@@ -1196,14 +1157,12 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
     emit('A', 'planning', 'status', 'Self-reviewing plan.md...');
     emitSupervisor(
       'planning',
-      preferFreshFollowups
-        ? 'The planner has a draft. I am starting a fresh self-review turn from plan.md so this provider can validate the artifact without depending on resumed tool history.'
-        : 'The planner has a draft. It is doing one focused self-review pass before handing the plan to the reviewer.'
+      'The planner has a draft. It is doing one focused self-review pass before handing the plan to the reviewer.'
     );
 
     const reviewResult = await claude('A', buildPlanningSelfReviewPrompt(projectDir), {
       role: ROLE_A,
-      resume: preferFreshFollowups ? undefined : (aSession || (options?.resumeStalled ? resumeSession : undefined)),
+      resume: aSession || (options?.resumeStalled ? resumeSession : undefined),
       resumePrompt: buildPlanningSelfReviewResumePrompt(projectDir),
     });
     aSession = reviewResult.sessionId;
@@ -1231,8 +1190,6 @@ async function runPlanReviewPhase(
 ): Promise<{ aSession: string; bSession?: string; reviewRound: number; paused: boolean }> {
   let bSession = options?.bSession || state.sessions.B || undefined;
   let planApproved = false;
-  const activeReviewModel = String(state.agentModels?.B || state.agentModels?.A || state.selectedModel || DEFAULT_MODEL);
-  const preferFreshReviewTurns = shouldPreferFreshFollowupSessions(state.selectedProvider, activeReviewModel);
   let reviewRound = state.events.filter(
     (event) => event.agent === 'B' && event.phase === 'plan-review' && event.type === 'status' && /^Review round \d+/.test(event.text)
   ).length;
@@ -1267,7 +1224,7 @@ async function runPlanReviewPhase(
   }
 
   let nextBPrompt =
-    options?.resumeStalledAgent === 'B' && !preferFreshReviewTurns
+    options?.resumeStalledAgent === 'B'
       ? buildResumePrompt('B', 'plan-review')
       : options?.resumeStalledAgent === 'A'
       ? [
@@ -1287,7 +1244,7 @@ async function runPlanReviewPhase(
           '',
           'Respond with ONLY a JSON object: {"status": "approved"} or {"status": "questions", "questions": ["..."]}',
         ].join('\n');
-  let nextBResume = options?.resumeStalledAgent === 'B' && !preferFreshReviewTurns
+  let nextBResume = options?.resumeStalledAgent === 'B'
     ? (state.runtime.activeTurn?.sessionId || bSession)
     : bSession;
 
@@ -1297,7 +1254,7 @@ async function runPlanReviewPhase(
 
     const bResult = await claude('B', nextBPrompt, {
       role: ROLE_B,
-      resume: preferFreshReviewTurns ? undefined : nextBResume,
+      resume: nextBResume,
       jsonSchema: REVIEW_SCHEMA,
     });
     bSession = bResult.sessionId;
@@ -1331,10 +1288,7 @@ async function runPlanReviewPhase(
       'Answer each question with verified information.',
       `Update ${join(projectDir, 'plan.md')} with any corrections or additions.`,
       'Do not guess. Verify from source.',
-    ].join('\n'), {
-      role: ROLE_A,
-      resume: preferFreshReviewTurns ? undefined : aSession,
-    });
+    ].join('\n'), { role: ROLE_A, resume: aSession });
     aSession = aFollowup.sessionId;
     saveSession('A', aSession);
 
@@ -1351,7 +1305,7 @@ async function runPlanReviewPhase(
       '',
       'Respond with ONLY a JSON object: {"status": "approved"} or {"status": "questions", "questions": ["..."]}',
     ].join('\n');
-    nextBResume = preferFreshReviewTurns ? undefined : bSession;
+    nextBResume = bSession;
   }
 
   emit('A', 'plan-review', 'status', 'Plan locked — final, unmodifiable copy');
@@ -1479,8 +1433,6 @@ async function runSecurityAudit(): Promise<{ paused: boolean }> {
 async function runDeployStep(aSession: string): Promise<string> {
   setPhase('deploy');
   setAgent('A', 'active');
-  const activeDeployModel = String(state.agentModels?.A || state.selectedModel || DEFAULT_MODEL);
-  const preferFreshDeployTurn = shouldPreferFreshFollowupSessions(state.selectedProvider, activeDeployModel);
   emit('D', 'deploy', 'send', 'Sent reviewed + tested code to A');
   emit('A', 'deploy', 'receive', 'Received final code from D');
   emit('A', 'deploy', 'status', 'Deploying...');
@@ -1489,10 +1441,7 @@ async function runDeployStep(aSession: string): Promise<string> {
     'The code has been reviewed and tested by Agent D. Everything passed.',
     'Do not use Bash or git. The orchestrator will handle any final commit.',
     'Confirm the build is complete and mention any environment caveats the user should know.',
-  ].join('\n'), {
-    role: ROLE_A,
-    resume: preferFreshDeployTurn ? undefined : aSession,
-  });
+  ].join('\n'), { role: ROLE_A, resume: aSession });
   aSession = aDeployResult.sessionId;
   saveSession('A', aSession);
 
@@ -1536,8 +1485,6 @@ async function runAuditFixPass(findingId: string): Promise<void> {
   }
 
   const nowIso = () => new Date().toISOString();
-  const activeAuditModel = String(state.agentModels?.C || state.agentModels?.D || state.agentModels?.E || state.selectedModel || DEFAULT_MODEL);
-  const preferFreshAuditFollowups = shouldPreferFreshFollowupSessions(state.selectedProvider, activeAuditModel);
 
   finding.status = 'sent-to-c';
   finding.history.push({ time: nowIso(), action: 'sent-to-c' });
@@ -1557,10 +1504,7 @@ async function runAuditFixPass(findingId: string): Promise<void> {
     '',
     'When you are done, confirm what you changed in one sentence.',
   ].join('\n');
-  const cResult = await claude('C', cPrompt, {
-    role: ROLE_C,
-    resume: preferFreshAuditFollowups ? undefined : cSession,
-  });
+  const cResult = await claude('C', cPrompt, { role: ROLE_C, resume: cSession });
   saveSession('C', cResult.sessionId);
   finding.history.push({ time: nowIso(), action: 'fix-applied' });
   emit('C', 'security-audit', 'fix', `Applied scoped fix for ${finding.id}`);
@@ -1575,11 +1519,7 @@ async function runAuditFixPass(findingId: string): Promise<void> {
     '',
     'Respond with ONLY: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
   ].join('\n');
-  const dResult = await claude('D', dPrompt, {
-    role: ROLE_D,
-    resume: preferFreshAuditFollowups ? undefined : dSession,
-    jsonSchema: TEST_SCHEMA,
-  });
+  const dResult = await claude('D', dPrompt, { role: ROLE_D, resume: dSession, jsonSchema: TEST_SCHEMA });
   saveSession('D', dResult.sessionId);
   const dSignal = dResult.structured || parseSignal(dResult.result);
   setAgent('D', 'done');
@@ -1608,11 +1548,7 @@ async function runAuditFixPass(findingId: string): Promise<void> {
     '',
     'Respond with ONLY the same JSON schema: {"status": "approved"} or {"status": "issues", "issues": [{"severity": "...", "finding": "[file/line] type: description and fix"}]}',
   ].join('\n');
-  const eResult = await claude('E', ePrompt, {
-    role: ROLE_E,
-    resume: preferFreshAuditFollowups ? undefined : eSession,
-    jsonSchema: AUDIT_SCHEMA,
-  });
+  const eResult = await claude('E', ePrompt, { role: ROLE_E, resume: eSession, jsonSchema: AUDIT_SCHEMA });
   saveSession('E', eResult.sessionId);
   const eSignal = eResult.structured || parseSignal(eResult.result);
   setAgent('E', 'done');
@@ -1704,8 +1640,6 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
   setPhase('coding');
   setPipelineStatus('running');
   setAgent('C', 'active');
-  const activeBuildModel = String(state.agentModels?.C || state.agentModels?.D || state.agentModels?.E || state.selectedModel || DEFAULT_MODEL);
-  const preferFreshBuildFollowups = shouldPreferFreshFollowupSessions(state.selectedProvider, activeBuildModel);
   emit('A', 'coding', 'send', 'Sent approved plan to C');
   emit('C', 'coding', 'receive', 'Received approved plan from A');
   emit('C', 'coding', 'status', 'Building...');
@@ -1757,7 +1691,7 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
 
     const dResult = await claude('D', dPrompt, {
       role: ROLE_D,
-      resume: preferFreshBuildFollowups ? undefined : dSession,
+      resume: dSession,
       jsonSchema: CODE_REVIEW_SCHEMA,
     });
     dSession = dResult.sessionId;
@@ -1785,10 +1719,7 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
         ...issues.map((issue, index) => `${index + 1}. ${issue}`),
         '',
         'Fix each issue. Do not modify plan.md.',
-      ].join('\n'), {
-        role: ROLE_C,
-        resume: preferFreshBuildFollowups ? undefined : cSession,
-      });
+      ].join('\n'), { role: ROLE_C, resume: cSession });
       cSession = cReviewFollowup.sessionId;
       saveSession('C', cSession);
 
@@ -1826,7 +1757,7 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
 
     const testResult = await claude('D', testPrompt, {
       role: ROLE_D,
-      resume: preferFreshBuildFollowups ? undefined : dSession!,
+      resume: dSession!,
       jsonSchema: TEST_SCHEMA,
     });
     dSession = testResult.sessionId;
@@ -1855,10 +1786,7 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
         ...failures.map((failure, index) => `${index + 1}. ${failure}`),
         '',
         'Fix each failure. Do not modify plan.md.',
-      ].join('\n'), {
-        role: ROLE_C,
-        resume: preferFreshBuildFollowups ? undefined : cSession,
-      });
+      ].join('\n'), { role: ROLE_C, resume: cSession });
       cSession = cTestFollowup.sessionId;
       saveSession('C', cSession);
 

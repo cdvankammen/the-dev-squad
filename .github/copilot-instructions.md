@@ -1,15 +1,16 @@
-<todos title="Monitor and Analyze devSquad Application" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
-- [x] enable-logging: Enable maximum logging in the application 🔴
-- [x] build-code: Build the code if necessary 🔴
-- [x] examine-logs: Examine existing log files for errors and flow 🔴
-- [x] run-monitor: Run the application and monitor live outputs 🔴
-- [x] analyze-codebase: Analyze codebase for agent communication and flow 🔴
-- [x] explain-findings: Explain findings, errors, and internal workings 🔴
-- [x] save-analysis: Save comprehensive analysis to memory file 🔴
+<todos title="JSON Repair Layer consolidation and shim improvements" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
+- [x] audit-repo: Audit repository for json repair & tool registry; located scripts/json-repair.mjs, src/lib/jsonRepair.ts, scripts/tool-registry.mjs, src/lib/tool-registry.json; added targeted retry to shim. 🔴
+  _Found runtime scripts and TS port; shim currently uses scripts/json-repair.mjs; duplication risk noted._
+- [-] consolidate-json-repair: Consolidate canonical json repair implementation into src/lib and add thin runtime wrapper in scripts/ (build step or dist artifact). 🔴
+  _Options: (A) add build step (tsc/esbuild) and have scripts import dist artifact; (B) keep runtime scripts and add parity tests — choose before implementing._
+- [x] shim-targeted-retry: Add targeted repair retry in http-runner-shim to request corrected JSON from model when parse fails (one retry). 🔴
+  _Implemented minimal retry: pushes user prompt asking for only JSON args and retries once; tracked by argRepairRetries Map._
+- [ ] tool-registry-parity: Ensure tool-registry TS API and scripts wrapper are consistent; add tests and verify getToolRegistryEntry is exported and used by shim. 🟡
+  _scripts/tool-registry.mjs loads src/lib/tool-registry.json; tests exist (npx tsx scripts/test-tool-registry.mjs). Consider consolidating to src/lib implementation as canonical._
+- [ ] ci-tests: Add CI job to run json-repair, tool-registry, and http-runner integration tests (requires npx tsx availability). 🟡
+- [ ] docs-json-repair: Write short README for src/lib/jsonRepair.ts and scripts/json-repair.mjs describing how to extend rules, add tool schemas, and enable LM Studio structured outputs. 🟢
 </todos>
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 <!-- Auto-generated todo section -->
 <!-- Add your custom Copilot instructions below -->
 

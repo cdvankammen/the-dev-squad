@@ -466,3 +466,616 @@
   lastError: null
 }
 [2026-04-26T22:47:12.388Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+
+[devmemory] --- New MCP session 2026-04-29T01:26:39.128Z ---
+[2026-04-29T01:26:39.313Z] MCP-ERR: [MCP] MCP SDK server connected and listening on stdio.
+[2026-04-29T01:26:40.271Z] MCP-ERR: [MCP-RAW-IN] {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_embedding_status","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","warmup":true}}}
+
+[2026-04-29T01:26:40.576Z] MCP-ERR: [embed] provider=xenova-wasm model=Xenova/all-MiniLM-L6-v2 dim=384
+[2026-04-29T01:26:40.577Z] MCP-ERR: [MCP] get_embedding_status {
+  initialized: true,
+  provider: 'xenova-wasm',
+  model: 'Xenova/all-MiniLM-L6-v2',
+  dimensions: 384,
+  fallback: false,
+  lastError: null
+}
+[2026-04-29T01:26:40.577Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+[2026-04-29T01:28:25.385Z] MCP-ERR: [MCP-RAW-IN] {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"index_codebase","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","force_reindex":false}}}
+
+[2026-04-29T01:28:25.388Z] MCP-ERR: [MCP] index_codebase called with {
+  workspace_root: '/Users/stillbulldog35/Documents/personalGithub/the-dev-squad',
+  force_reindex: false
+}
+[2026-04-29T01:28:25.462Z] MCP-ERR: [ingest] Found 196 files (filtered from 197).
+[2026-04-29T01:28:25.462Z] MCP-ERR: [ingest] Processing file 1/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tsconfig.json
+[2026-04-29T01:28:25.465Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:25.670Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tsconfig.json
+[2026-04-29T01:28:25.671Z] MCP-ERR: [ingest] Processing file 2/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/provider-config.json
+[2026-04-29T01:28:25.676Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:25.774Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/provider-config.json
+[ingest] Processing file 3/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pnpm-workspace.yaml
+[2026-04-29T01:28:25.778Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:25.839Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pnpm-workspace.yaml
+[2026-04-29T01:28:25.840Z] MCP-ERR: [ingest] Processing file 4/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/playwright.config.ts
+[2026-04-29T01:28:25.842Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:26.128Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/playwright.config.ts
+[2026-04-29T01:28:26.128Z] MCP-ERR: [ingest] Processing file 5/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline-events.json
+[2026-04-29T01:28:26.131Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:26.322Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline-events.json
+[ingest] Processing file 6/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/package.json
+[2026-04-29T01:28:26.326Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:26.667Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/package.json
+[2026-04-29T01:28:26.668Z] MCP-ERR: [ingest] Processing file 7/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/opencode.json
+[2026-04-29T01:28:26.672Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:26.848Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/opencode.json
+[ingest] Processing file 8/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/next.config.ts
+[2026-04-29T01:28:26.850Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:26.924Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/next.config.ts
+[ingest] Processing file 9/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/next-env.d.ts
+[2026-04-29T01:28:26.926Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:27.028Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/next-env.d.ts
+[2026-04-29T01:28:27.028Z] MCP-ERR: [ingest] Processing file 10/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/TODO.md
+[2026-04-29T01:28:27.030Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:28:27.432Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/TODO.md
+[ingest] Processing file 11/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/SECURITY.md
+[2026-04-29T01:28:27.434Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:28:29.574Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/SECURITY.md
+[2026-04-29T01:28:29.574Z] MCP-ERR: [ingest] Processing file 12/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/SECURITY-ROADMAP.md
+[2026-04-29T01:28:29.578Z] MCP-ERR: [ingest] Chunked into 22 chunks.
+[2026-04-29T01:28:31.856Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/SECURITY-ROADMAP.md
+[ingest] Processing file 13/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/README.md
+[2026-04-29T01:28:31.860Z] MCP-ERR: [ingest] Chunked into 42 chunks.
+[2026-04-29T01:28:38.359Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/README.md
+[ingest] Processing file 14/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CONTRIBUTING.md
+[2026-04-29T01:28:38.361Z] MCP-ERR: [ingest] Chunked into 10 chunks.
+[2026-04-29T01:28:39.280Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CONTRIBUTING.md
+[2026-04-29T01:28:39.280Z] MCP-ERR: [ingest] Processing file 15/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CLAUDE.md
+[2026-04-29T01:28:39.281Z] MCP-ERR: [ingest] Chunked into 14 chunks.
+[2026-04-29T01:28:40.705Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CLAUDE.md
+[ingest] Processing file 16/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CHANGELOG.md
+[2026-04-29T01:28:40.709Z] MCP-ERR: [ingest] Chunked into 29 chunks.
+[2026-04-29T01:28:44.097Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/CHANGELOG.md
+[ingest] Processing file 17/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/ARCHITECTURE.md
+[2026-04-29T01:28:44.101Z] MCP-ERR: [ingest] Chunked into 25 chunks.
+[2026-04-29T01:28:47.854Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/ARCHITECTURE.md
+[ingest] Processing file 18/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/AGENTS.md
+[2026-04-29T01:28:47.858Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:28:48.401Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/AGENTS.md
+[ingest] Processing file 19/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tmp-pipeline-check/pipeline-events.json
+[2026-04-29T01:28:48.403Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:48.619Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tmp-pipeline-check/pipeline-events.json
+[2026-04-29T01:28:48.619Z] MCP-ERR: [ingest] Processing file 20/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/probe-auth.sh
+[2026-04-29T01:28:48.621Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:48.922Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/probe-auth.sh
+[ingest] Processing file 21/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/orchestrator-smoke-run.ts
+[2026-04-29T01:28:48.924Z] MCP-ERR: [ingest] Chunked into 8 chunks.
+[2026-04-29T01:28:50.392Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/orchestrator-smoke-run.ts
+[2026-04-29T01:28:50.392Z] MCP-ERR: [ingest] Processing file 22/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openwebui.sh
+[2026-04-29T01:28:50.393Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:50.567Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openwebui.sh
+[ingest] Processing file 23/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openclaude.sh
+[2026-04-29T01:28:50.569Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:50.793Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openclaude.sh
+[2026-04-29T01:28:50.793Z] MCP-ERR: [ingest] Processing file 24/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openai-http.sh
+[2026-04-29T01:28:50.794Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:50.975Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openai-http.sh
+[ingest] Processing file 25/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openai-compat.sh
+[2026-04-29T01:28:50.979Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:51.166Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-openai-compat.sh
+[ingest] Processing file 26/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-ollama.sh
+[2026-04-29T01:28:51.170Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:51.381Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-ollama.sh
+[ingest] Processing file 27/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-occ.sh
+[2026-04-29T01:28:51.385Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:51.602Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-occ.sh
+[ingest] Processing file 28/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-lm-studio.sh
+[2026-04-29T01:28:51.606Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:51.830Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-lm-studio.sh
+[ingest] Processing file 29/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-ccr.sh
+[2026-04-29T01:28:51.834Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:28:52.065Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/fix-ccr.sh
+[ingest] Processing file 30/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/duplicate-tools-report.txt
+[2026-04-29T01:28:52.074Z] MCP-ERR: [ingest] Chunked into 47 chunks.
+[2026-04-29T01:29:08.916Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/duplicate-tools-report.txt
+[ingest] Processing file 31/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diagnose-providers.sh
+[2026-04-29T01:29:08.917Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:09.033Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diagnose-providers.sh
+[ingest] Processing file 32/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-openclaude.sh
+[2026-04-29T01:29:09.037Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:09.229Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-openclaude.sh
+[ingest] Processing file 33/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-ollama.sh
+[2026-04-29T01:29:09.234Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:09.392Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-ollama.sh
+[ingest] Processing file 34/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-lm-studio.sh
+[2026-04-29T01:29:09.394Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:09.543Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-lm-studio.sh
+[ingest] Processing file 35/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-ccr.sh
+[2026-04-29T01:29:09.546Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:09.741Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/diag-ccr.sh
+[ingest] Processing file 36/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/composite_sprites.py
+[2026-04-29T01:29:09.743Z] MCP-ERR: [ingest] Chunked into 20 chunks.
+[2026-04-29T01:29:11.860Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/composite_sprites.py
+[2026-04-29T01:29:11.860Z] MCP-ERR: [ingest] Processing file 37/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/check-pipeline-state.ts
+[2026-04-29T01:29:11.865Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:12.304Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/check-pipeline-state.ts
+[ingest] Processing file 38/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/check-duplicate-tools.py
+[2026-04-29T01:29:12.307Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:29:13.955Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/scripts/check-duplicate-tools.py
+[ingest] Processing file 39/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/runner.ts
+[2026-04-29T01:29:13.958Z] MCP-ERR: [ingest] Chunked into 38 chunks.
+[2026-04-29T01:29:19.572Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/runner.ts
+[ingest] Processing file 40/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-s.md
+[2026-04-29T01:29:19.577Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:29:20.305Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-s.md
+[2026-04-29T01:29:20.306Z] MCP-ERR: [ingest] Processing file 41/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-e.md
+[2026-04-29T01:29:20.309Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:29:22.040Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-e.md
+[2026-04-29T01:29:22.040Z] MCP-ERR: [ingest] Processing file 42/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-e-lite.md
+[2026-04-29T01:29:22.044Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:22.321Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-e-lite.md
+[ingest] Processing file 43/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-d.md
+[2026-04-29T01:29:22.324Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:29:24.064Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-d.md
+[ingest] Processing file 44/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-d-lite.md
+[2026-04-29T01:29:24.069Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:24.353Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-d-lite.md
+[ingest] Processing file 45/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-c.md
+[2026-04-29T01:29:24.356Z] MCP-ERR: [ingest] Chunked into 7 chunks.
+[2026-04-29T01:29:25.359Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-c.md
+[ingest] Processing file 46/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-c-lite.md
+[2026-04-29T01:29:25.366Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:25.640Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-c-lite.md
+[ingest] Processing file 47/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-b.md
+[2026-04-29T01:29:25.643Z] MCP-ERR: [ingest] Chunked into 7 chunks.
+[2026-04-29T01:29:26.507Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-b.md
+[2026-04-29T01:29:26.507Z] MCP-ERR: [ingest] Processing file 48/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-b-lite.md
+[2026-04-29T01:29:26.512Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:26.780Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-b-lite.md
+[ingest] Processing file 49/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a.md
+[2026-04-29T01:29:26.783Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:29:27.485Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a.md
+[ingest] Processing file 50/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a-phase0.md
+[2026-04-29T01:29:27.487Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:27.770Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a-phase0.md
+[ingest] Processing file 51/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a-lite.md
+[2026-04-29T01:29:27.773Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:28.044Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/role-a-lite.md
+[ingest] Processing file 52/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/pipelinebuildarchitecture.md
+[2026-04-29T01:29:28.046Z] MCP-ERR: [ingest] Chunked into 17 chunks.
+[2026-04-29T01:29:31.069Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/pipelinebuildarchitecture.md
+[2026-04-29T01:29:31.069Z] MCP-ERR: [ingest] Processing file 53/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/orchestrator.ts
+[2026-04-29T01:29:31.074Z] MCP-ERR: [ingest] Chunked into 72 chunks.
+[2026-04-29T01:29:47.278Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/orchestrator.ts
+[ingest] Processing file 54/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/checklist-template.md
+[2026-04-29T01:29:47.282Z] MCP-ERR: [ingest] Chunked into 48 chunks.
+[2026-04-29T01:29:52.752Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/checklist-template.md
+[ingest] Processing file 55/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/build-plan-template.md
+[2026-04-29T01:29:52.755Z] MCP-ERR: [ingest] Chunked into 13 chunks.
+[2026-04-29T01:29:54.192Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/build-plan-template.md
+[ingest] Processing file 56/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/agent-firewall.sh
+[2026-04-29T01:29:54.195Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:54.765Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/agent-firewall.sh
+[ingest] Processing file 57/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/agent-entrypoint.sh
+[2026-04-29T01:29:54.768Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:29:54.990Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/agent-entrypoint.sh
+[ingest] Processing file 58/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/README.md
+[2026-04-29T01:29:54.993Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:55.355Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/pipeline/README.md
+[ingest] Processing file 59/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/squad-page.spec.ts
+[2026-04-29T01:29:55.357Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:55.928Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/squad-page.spec.ts
+[ingest] Processing file 60/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/provider-persistence-and-recovery.spec.ts
+[2026-04-29T01:29:55.933Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:29:56.922Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/provider-persistence-and-recovery.spec.ts
+[ingest] Processing file 61/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/provider-model-selection.spec.ts
+[2026-04-29T01:29:56.925Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:57.582Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/provider-model-selection.spec.ts
+[ingest] Processing file 62/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/pipeline-controls.spec.ts
+[2026-04-29T01:29:57.585Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:58.232Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/pipeline-controls.spec.ts
+[ingest] Processing file 63/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/manual-chat.spec.ts
+[2026-04-29T01:29:58.235Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:29:58.878Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/manual-chat.spec.ts
+[ingest] Processing file 64/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/helpers.ts
+[2026-04-29T01:29:58.881Z] MCP-ERR: [ingest] Chunked into 10 chunks.
+[2026-04-29T01:30:00.110Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/helpers.ts
+[ingest] Processing file 65/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/api-smoke.spec.ts
+[2026-04-29T01:30:00.114Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:30:00.667Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/e2e/api-smoke.spec.ts
+[ingest] Processing file 66/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/provider-remediation.md
+[2026-04-29T01:30:00.670Z] MCP-ERR: [ingest] Chunked into 9 chunks.
+[2026-04-29T01:30:02.346Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/provider-remediation.md
+[ingest] Processing file 67/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/docker-credentials.md
+[2026-04-29T01:30:02.348Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:30:03.029Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/docker-credentials.md
+[ingest] Processing file 68/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/adapter-deep-dive.md
+[2026-04-29T01:30:03.031Z] MCP-ERR: [ingest] Chunked into 7 chunks.
+[2026-04-29T01:30:05.316Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/docs/adapter-deep-dive.md
+[ingest] Processing file 69/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/verification_report.md
+[2026-04-29T01:30:05.319Z] MCP-ERR: [ingest] Chunked into 28 chunks.
+[2026-04-29T01:30:09.403Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/verification_report.md
+[ingest] Processing file 70/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/vector_db_manifest.md
+[2026-04-29T01:30:09.406Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:30:09.673Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/vector_db_manifest.md
+[ingest] Processing file 71/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/ui_control_test_matrix.md
+[2026-04-29T01:30:09.676Z] MCP-ERR: [ingest] Chunked into 11 chunks.
+[2026-04-29T01:30:11.478Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/ui_control_test_matrix.md
+[ingest] Processing file 72/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_local_copy_report.md
+[2026-04-29T01:30:11.481Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:30:11.770Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_local_copy_report.md
+[ingest] Processing file 73/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_install_suggestions.md
+[2026-04-29T01:30:11.774Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:30:12.395Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_install_suggestions.md
+[ingest] Processing file 74/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_index.md
+[2026-04-29T01:30:12.397Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:30:12.654Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_index.md
+[ingest] Processing file 75/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/services-inventory.md
+[2026-04-29T01:30:12.657Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:30:14.613Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/services-inventory.md
+[ingest] Processing file 76/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/safety_scan_report.md
+[2026-04-29T01:30:14.616Z] MCP-ERR: [ingest] Chunked into 7 chunks.
+[2026-04-29T01:30:15.989Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/safety_scan_report.md
+[ingest] Processing file 77/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/runbook.md
+[2026-04-29T01:30:15.992Z] MCP-ERR: [ingest] Chunked into 17 chunks.
+[2026-04-29T01:30:18.126Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/runbook.md
+[2026-04-29T01:30:18.127Z] MCP-ERR: [ingest] Processing file 78/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/requirements.txt
+[2026-04-29T01:30:18.129Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:30:18.215Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/requirements.txt
+[ingest] Processing file 79/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/rag_ingest_example.py
+[2026-04-29T01:30:18.218Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:30:18.760Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/rag_ingest_example.py
+[ingest] Processing file 80/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/query_helper.py
+[2026-04-29T01:30:18.763Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:30:19.668Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/query_helper.py
+[ingest] Processing file 81/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/query_embed.py
+[2026-04-29T01:30:19.669Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:30:19.962Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/query_embed.py
+[ingest] Processing file 82/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/providers_and_terminals.md
+[2026-04-29T01:30:19.964Z] MCP-ERR: [ingest] Chunked into 15 chunks.
+[2026-04-29T01:30:22.121Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/providers_and_terminals.md
+[ingest] Processing file 83/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/provider_pipeline_functionality.md
+[2026-04-29T01:30:22.122Z] MCP-ERR: [ingest] Chunked into 9 chunks.
+[2026-04-29T01:30:23.354Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/provider_pipeline_functionality.md
+[ingest] Processing file 84/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/overview.md
+[2026-04-29T01:30:23.355Z] MCP-ERR: [ingest] Chunked into 11 chunks.
+[2026-04-29T01:30:26.944Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/overview.md
+[ingest] Processing file 85/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/main_vs_branch_analysis.md
+[2026-04-29T01:30:26.945Z] MCP-ERR: [ingest] Chunked into 10 chunks.
+[2026-04-29T01:30:28.370Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/main_vs_branch_analysis.md
+[ingest] Processing file 86/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/ingest_guide.md
+[2026-04-29T01:30:28.375Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:30:28.756Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/ingest_guide.md
+[ingest] Processing file 87/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/file-map.md
+[2026-04-29T01:30:28.760Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:30:29.929Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/file-map.md
+[2026-04-29T01:30:29.929Z] MCP-ERR: [ingest] Processing file 88/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_questions_2.md
+[2026-04-29T01:30:29.932Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:30:32.527Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_questions_2.md
+[ingest] Processing file 89/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_questions.md
+[2026-04-29T01:30:32.530Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:30:34.604Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_questions.md
+[ingest] Processing file 90/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_100_5w1h_questions.md
+[2026-04-29T01:30:34.608Z] MCP-ERR: [ingest] Chunked into 101 chunks.
+[2026-04-29T01:30:56.101Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/deep_dive_100_5w1h_questions.md
+[ingest] Processing file 91/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/claude-connections.md
+[2026-04-29T01:30:56.105Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:30:56.854Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/claude-connections.md
+[ingest] Processing file 92/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/chat_audit.md
+[2026-04-29T01:30:56.859Z] MCP-ERR: [ingest] Chunked into 10 chunks.
+[2026-04-29T01:30:58.071Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/chat_audit.md
+[ingest] Processing file 93/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/build_local_embeddings.py
+[2026-04-29T01:30:58.076Z] MCP-ERR: [ingest] Chunked into 9 chunks.
+[2026-04-29T01:30:59.728Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/build_local_embeddings.py
+[ingest] Processing file 94/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/README_MEMORY.md
+[2026-04-29T01:30:59.732Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:31:00.105Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/README_MEMORY.md
+[ingest] Processing file 95/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/README.md
+[2026-04-29T01:31:00.111Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:31:00.864Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/README.md
+[ingest] Processing file 96/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/retriever_service.py
+[2026-04-29T01:31:00.868Z] MCP-ERR: [ingest] Chunked into 26 chunks.
+[2026-04-29T01:31:04.867Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/retriever_service.py
+[ingest] Processing file 97/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/requirements.txt
+[2026-04-29T01:31:04.870Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:31:04.974Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/requirements.txt
+[ingest] Processing file 98/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/ingest_and_embed.py
+[2026-04-29T01:31:04.977Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:31:05.728Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/ingest_and_embed.py
+[ingest] Processing file 99/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/README.md
+[2026-04-29T01:31:05.732Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:31:05.971Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/tools/rag/README.md
+[ingest] Processing file 100/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/rag-implementer/manifest.yaml
+[2026-04-29T01:31:05.974Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:31:06.354Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/rag-implementer/manifest.yaml
+[ingest] Processing file 101/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/rag-implementer/SKILL.md
+[2026-04-29T01:31:06.356Z] MCP-ERR: [ingest] Chunked into 30 chunks.
+[2026-04-29T01:31:10.773Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/rag-implementer/SKILL.md
+[ingest] Processing file 102/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/langchain-dependencies/SKILL.md
+[2026-04-29T01:31:10.777Z] MCP-ERR: [ingest] Chunked into 49 chunks.
+[2026-04-29T01:31:17.786Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/langchain-dependencies/SKILL.md
+[ingest] Processing file 103/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/openclaw-control-center/SKILL.md
+[2026-04-29T01:31:17.790Z] MCP-ERR: [ingest] Chunked into 46 chunks.
+[2026-04-29T01:31:24.291Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/openclaw-control-center/SKILL.md
+[ingest] Processing file 104/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/claude-peers-mcp/SKILL.md
+[2026-04-29T01:31:24.295Z] MCP-ERR: [ingest] Chunked into 33 chunks.
+[2026-04-29T01:31:28.386Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/skills_local/claude-peers-mcp/SKILL.md
+[ingest] Processing file 105/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/use-pipeline.ts
+[2026-04-29T01:31:28.389Z] MCP-ERR: [ingest] Chunked into 24 chunks.
+[2026-04-29T01:31:32.272Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/use-pipeline.ts
+[ingest] Processing file 106/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/toolRegistry.ts
+[2026-04-29T01:31:32.278Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:31:34.242Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/toolRegistry.ts
+[ingest] Processing file 107/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/tool-registry.json
+[2026-04-29T01:31:34.246Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:31:34.986Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/tool-registry.json
+[ingest] Processing file 108/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/supervisor-intents.ts
+[2026-04-29T01:31:34.990Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:31:36.177Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/supervisor-intents.ts
+[ingest] Processing file 109/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/supervisor-concept.ts
+[2026-04-29T01:31:36.183Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:31:36.662Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/supervisor-concept.ts
+[ingest] Processing file 110/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/server-logging.ts
+[2026-04-29T01:31:36.665Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:31:36.977Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/server-logging.ts
+[2026-04-29T01:31:36.977Z] MCP-ERR: [ingest] Processing file 111/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/providerStorage.ts
+[2026-04-29T01:31:36.982Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:31:37.744Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/providerStorage.ts
+[2026-04-29T01:31:37.744Z] MCP-ERR: [ingest] Processing file 112/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/providerConfig.ts
+[2026-04-29T01:31:37.745Z] MCP-ERR: [ingest] Chunked into 9 chunks.
+[2026-04-29T01:31:39.906Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/providerConfig.ts
+[2026-04-29T01:31:39.906Z] MCP-ERR: [ingest] Processing file 113/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-supervisor.ts
+[2026-04-29T01:31:39.907Z] MCP-ERR: [ingest] Chunked into 23 chunks.
+[2026-04-29T01:31:45.238Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-supervisor.ts
+[ingest] Processing file 114/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-signal.ts
+[2026-04-29T01:31:45.241Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:31:45.897Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-signal.ts
+[2026-04-29T01:31:45.897Z] MCP-ERR: [ingest] Processing file 115/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-runtime.ts
+[2026-04-29T01:31:45.898Z] MCP-ERR: [ingest] Chunked into 8 chunks.
+[2026-04-29T01:31:47.196Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-runtime.ts
+[ingest] Processing file 116/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-planning.ts
+[2026-04-29T01:31:47.196Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:31:49.216Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-planning.ts
+[2026-04-29T01:31:49.216Z] MCP-ERR: [ingest] Processing file 117/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-control.ts
+[2026-04-29T01:31:49.217Z] MCP-ERR: [ingest] Chunked into 29 chunks.
+[2026-04-29T01:31:55.171Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-control.ts
+[ingest] Processing file 118/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-approval.ts
+[2026-04-29T01:31:55.171Z] MCP-ERR: [ingest] Chunked into 14 chunks.
+[2026-04-29T01:31:57.216Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/pipeline-approval.ts
+[ingest] Processing file 119/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/jsonRepair.ts
+[2026-04-29T01:31:57.216Z] MCP-ERR: [ingest] Chunked into 12 chunks.
+[2026-04-29T01:31:59.009Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/jsonRepair.ts
+[ingest] Processing file 120/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/fileUtils.ts
+[2026-04-29T01:31:59.010Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:31:59.336Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/fileUtils.ts
+[ingest] Processing file 121/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/page.tsx
+[2026-04-29T01:31:59.338Z] MCP-ERR: [ingest] Chunked into 38 chunks.
+[2026-04-29T01:32:11.010Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/page.tsx
+[ingest] Processing file 122/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/layout.tsx
+[2026-04-29T01:32:11.010Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:32:11.274Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/layout.tsx
+[ingest] Processing file 123/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_6.json
+[2026-04-29T01:32:11.277Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:12.171Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_6.json
+[ingest] Processing file 124/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_5.json
+[2026-04-29T01:32:12.179Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:12.920Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_5.json
+[ingest] Processing file 125/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_4.json
+[2026-04-29T01:32:12.933Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:13.849Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_4.json
+[ingest] Processing file 126/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_3.json
+[2026-04-29T01:32:13.853Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:14.802Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_3.json
+[ingest] Processing file 127/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_2.json
+[2026-04-29T01:32:14.808Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:16.143Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_2.json
+[ingest] Processing file 128/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_1.json
+[2026-04-29T01:32:16.172Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:17.334Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_1.json
+[2026-04-29T01:32:17.337Z] MCP-ERR: [ingest] Processing file 129/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_0.json
+[2026-04-29T01:32:17.349Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:32:18.786Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/tools_0.json
+[ingest] Processing file 130/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/report.txt
+[2026-04-29T01:32:18.821Z] MCP-ERR: [ingest] Chunked into 47 chunks.
+[2026-04-29T01:33:13.625Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/diagnostics/copilot-tools-payload/report.txt
+[ingest] Processing file 131/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/builds/staging/pipeline-events.json
+[2026-04-29T01:33:13.625Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:33:13.790Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/builds/staging/pipeline-events.json
+[ingest] Processing file 132/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/verify_claude_duplicate_fix.sh
+[2026-04-29T01:33:13.791Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:33:14.486Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/verify_claude_duplicate_fix.sh
+[2026-04-29T01:33:14.486Z] MCP-ERR: [ingest] Processing file 133/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/requirements.txt
+[2026-04-29T01:33:14.487Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:33:14.632Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/requirements.txt
+[ingest] Processing file 134/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/regen_vectors_fallback.py
+[2026-04-29T01:33:14.634Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:33:15.996Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/regen_vectors_fallback.py
+[ingest] Processing file 135/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/prevent_runtime_dupes.md
+[2026-04-29T01:33:15.997Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:33:16.484Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/prevent_runtime_dupes.md
+[ingest] Processing file 136/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/openai_cohere_adapter.py
+[2026-04-29T01:33:16.485Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:33:16.982Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/openai_cohere_adapter.py
+[ingest] Processing file 137/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/import_to_chroma.py
+[2026-04-29T01:33:16.984Z] MCP-ERR: [ingest] Chunked into 9 chunks.
+[2026-04-29T01:33:18.779Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/import_to_chroma.py
+[ingest] Processing file 138/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/find_request_tools.py
+[2026-04-29T01:33:18.782Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:33:19.405Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/find_request_tools.py
+[ingest] Processing file 139/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/dedupe_tools.py
+[2026-04-29T01:33:19.406Z] MCP-ERR: [ingest] Chunked into 14 chunks.
+[2026-04-29T01:33:22.317Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/dedupe_tools.py
+[ingest] Processing file 140/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/compute_embeddings_sbert.py
+[2026-04-29T01:33:22.319Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:33:23.538Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/compute_embeddings_sbert.py
+[ingest] Processing file 141/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check_payload_duplicates.py
+[2026-04-29T01:33:23.541Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:33:24.305Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check_payload_duplicates.py
+[ingest] Processing file 142/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check_and_exit.sh
+[2026-04-29T01:33:24.308Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:33:24.644Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check_and_exit.sh
+[ingest] Processing file 143/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check-duplicate-tools.py
+[2026-04-29T01:33:24.648Z] MCP-ERR: [ingest] Chunked into 13 chunks.
+[2026-04-29T01:33:27.001Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/check-duplicate-tools.py
+[ingest] Processing file 144/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/README.md
+[2026-04-29T01:33:27.004Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:33:27.334Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/tools/README.md
+[ingest] Processing file 145/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_local/README.md
+[2026-04-29T01:33:27.335Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:33:27.532Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/skills_local/README.md
+[ingest] Processing file 146/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/scripts/copy_local_skills.sh
+[2026-04-29T01:33:27.535Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:33:28.299Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/scripts/copy_local_skills.sh
+[ingest] Processing file 147/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/ui_controls_raw.txt
+[2026-04-29T01:33:28.301Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:33:29.319Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/ui_controls_raw.txt
+[2026-04-29T01:33:29.319Z] MCP-ERR: [ingest] Processing file 148/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/merged_tools_deduped.json
+[2026-04-29T01:33:29.333Z] MCP-ERR: [ingest] Chunked into 167 chunks.
+[2026-04-29T01:34:37.812Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/merged_tools_deduped.json
+[ingest] Processing file 149/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/merged_summary.txt
+[2026-04-29T01:34:37.817Z] MCP-ERR: [ingest] Chunked into 23 chunks.
+[2026-04-29T01:34:47.478Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/merged_summary.txt
+[2026-04-29T01:34:47.478Z] MCP-ERR: [ingest] Processing file 150/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/failing_request_1960_memory_entries.json
+[2026-04-29T01:34:47.481Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:34:48.138Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/failing_request_1960_memory_entries.json
+[ingest] Processing file 151/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/failing_request_1960_duplicates.txt
+[2026-04-29T01:34:48.141Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:34:48.522Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/failing_request_1960_duplicates.txt
+[ingest] Processing file 152/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/copilot_tools_report.txt
+[2026-04-29T01:34:48.525Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:34:48.729Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/copilot_tools_report.txt
+[ingest] Processing file 153/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/claude-memory-collision-fix.md
+[2026-04-29T01:34:48.733Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:34:49.681Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/claude-memory-collision-fix.md
+[ingest] Processing file 154/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/README.md
+[2026-04-29T01:34:49.683Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:34:49.985Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/devSquadMemory/diagnostics/README.md
+[ingest] Processing file 155/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/rag/localRetriever.ts
+[2026-04-29T01:34:49.986Z] MCP-ERR: [ingest] Chunked into 8 chunks.
+[2026-04-29T01:34:51.654Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/rag/localRetriever.ts
+[ingest] Processing file 156/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openaiHttpAdapter.ts
+[2026-04-29T01:34:51.654Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:34:52.833Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openaiHttpAdapter.ts
+[ingest] Processing file 157/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openWebUIAdapter.ts
+[2026-04-29T01:34:52.834Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:34:53.767Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openWebUIAdapter.ts
+[ingest] Processing file 158/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openClaudeCodeAdapter.ts
+[2026-04-29T01:34:53.767Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:34:54.915Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openClaudeCodeAdapter.ts
+[ingest] Processing file 159/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openClaudeAdapter.ts
+[2026-04-29T01:34:54.915Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:34:55.814Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openClaudeAdapter.ts
+[ingest] Processing file 160/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openAICompatAdapter.ts
+[2026-04-29T01:34:55.814Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:34:57.256Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/openAICompatAdapter.ts
+[ingest] Processing file 161/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/ollamaAdapter.ts
+[2026-04-29T01:34:57.256Z] MCP-ERR: [ingest] Chunked into 8 chunks.
+[2026-04-29T01:34:59.163Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/ollamaAdapter.ts
+[ingest] Processing file 162/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/lmStudioAdapter.ts
+[2026-04-29T01:34:59.164Z] MCP-ERR: [ingest] Chunked into 8 chunks.
+[2026-04-29T01:35:01.344Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/lmStudioAdapter.ts
+[ingest] Processing file 163/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/index.ts
+[2026-04-29T01:35:01.344Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:35:02.084Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/index.ts
+[ingest] Processing file 164/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/claudeCodeRouterAdapter.ts
+[2026-04-29T01:35:02.086Z] MCP-ERR: [ingest] Chunked into 14 chunks.
+[2026-04-29T01:35:06.228Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/claudeCodeRouterAdapter.ts
+[ingest] Processing file 165/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/claudeCliAdapter.ts
+[2026-04-29T01:35:06.228Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:06.732Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/claudeCliAdapter.ts
+[ingest] Processing file 166/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/README.md
+[2026-04-29T01:35:06.733Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:35:06.946Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/README.md
+[ingest] Processing file 167/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/ModelAdapter.ts
+[2026-04-29T01:35:06.947Z] MCP-ERR: [ingest] Chunked into 18 chunks.
+[2026-04-29T01:35:10.838Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/lib/modelAdapters/ModelAdapter.ts
+[ingest] Processing file 168/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/MarkdownText.tsx
+[2026-04-29T01:35:10.839Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:11.188Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/MarkdownText.tsx
+[ingest] Processing file 169/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/CardSkeleton.tsx
+[2026-04-29T01:35:11.189Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:35:11.695Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/CardSkeleton.tsx
+[ingest] Processing file 170/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Card.tsx
+[2026-04-29T01:35:11.696Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:35:12.153Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Card.tsx
+[ingest] Processing file 171/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Button.tsx
+[2026-04-29T01:35:12.154Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:35:13.018Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Button.tsx
+[ingest] Processing file 172/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Badge.tsx
+[2026-04-29T01:35:13.019Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:35:13.665Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/Badge.tsx
+[ingest] Processing file 173/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/AutoGrowTextarea.tsx
+[2026-04-29T01:35:13.665Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:14.084Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/shared/AutoGrowTextarea.tsx
+[ingest] Processing file 174/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/provider/ProviderHealthHint.tsx
+[2026-04-29T01:35:14.085Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:35:14.931Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/provider/ProviderHealthHint.tsx
+[2026-04-29T01:35:14.931Z] MCP-ERR: [ingest] Processing file 175/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/mission/PixelSprite.tsx
+[2026-04-29T01:35:14.931Z] MCP-ERR: [ingest] Chunked into 5 chunks.
+[2026-04-29T01:35:16.411Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/mission/PixelSprite.tsx
+[ingest] Processing file 176/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/mission/LunarOfficeScene.tsx
+[2026-04-29T01:35:16.420Z] MCP-ERR: [ingest] Chunked into 56 chunks.
+[2026-04-29T01:35:34.607Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/mission/LunarOfficeScene.tsx
+[ingest] Processing file 177/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/games/TicTacToe.tsx
+[2026-04-29T01:35:34.611Z] MCP-ERR: [ingest] Chunked into 15 chunks.
+[2026-04-29T01:35:37.632Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/games/TicTacToe.tsx
+[ingest] Processing file 178/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/agents/SecurityAuditPanel.tsx
+[2026-04-29T01:35:37.635Z] MCP-ERR: [ingest] Chunked into 10 chunks.
+[2026-04-29T01:35:40.470Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/components/agents/SecurityAuditPanel.tsx
+[ingest] Processing file 179/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/squad/page.tsx
+[2026-04-29T01:35:40.471Z] MCP-ERR: [ingest] Chunked into 26 chunks.
+[2026-04-29T01:35:49.023Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/squad/page.tsx
+[ingest] Processing file 180/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/provider-help/page.tsx
+[2026-04-29T01:35:49.025Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:49.865Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/provider-help/page.tsx
+[ingest] Processing file 181/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/games/tic-tac-toe/page.tsx
+[2026-04-29T01:35:49.868Z] MCP-ERR: [ingest] Chunked into 1 chunks.
+[2026-04-29T01:35:50.243Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/games/tic-tac-toe/page.tsx
+[2026-04-29T01:35:50.243Z] MCP-ERR: [ingest] Processing file 182/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/stop-pipeline/route.ts
+[2026-04-29T01:35:50.246Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:50.562Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/stop-pipeline/route.ts
+[ingest] Processing file 183/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/state/route.ts
+[2026-04-29T01:35:50.568Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:35:51.994Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/state/route.ts
+[ingest] Processing file 184/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/start-pipeline/route.ts
+[2026-04-29T01:35:51.996Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:35:52.799Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/start-pipeline/route.ts
+[ingest] Processing file 185/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/resume-pipeline/route.ts
+[2026-04-29T01:35:52.802Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:53.194Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/resume-pipeline/route.ts
+[ingest] Processing file 186/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/reset/route.ts
+[2026-04-29T01:35:53.197Z] MCP-ERR: [ingest] Chunked into 3 chunks.
+[2026-04-29T01:35:54.009Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/reset/route.ts
+[ingest] Processing file 187/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/providers/route.ts
+[2026-04-29T01:35:54.012Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:35:55.260Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/providers/route.ts
+[ingest] Processing file 188/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/provider-config/route.ts
+[2026-04-29T01:35:55.264Z] MCP-ERR: [ingest] Chunked into 6 chunks.
+[2026-04-29T01:35:56.633Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/provider-config/route.ts
+[2026-04-29T01:35:56.633Z] MCP-ERR: [ingest] Processing file 189/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/plan/route.ts
+[2026-04-29T01:35:56.638Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:57.091Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/plan/route.ts
+[ingest] Processing file 190/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/pipeline-control/route.ts
+[ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:57.462Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/pipeline-control/route.ts
+[ingest] Processing file 191/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/models/route.ts
+[2026-04-29T01:35:57.464Z] MCP-ERR: [ingest] Chunked into 4 chunks.
+[2026-04-29T01:35:58.691Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/models/route.ts
+[ingest] Processing file 192/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/pending/route.ts
+[2026-04-29T01:35:58.692Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:58.993Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/pending/route.ts
+[ingest] Processing file 193/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/health/route.ts
+[2026-04-29T01:35:58.996Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:35:59.397Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/health/route.ts
+[ingest] Processing file 194/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts
+[2026-04-29T01:35:59.402Z] MCP-ERR: [ingest] Chunked into 35 chunks.
+[2026-04-29T01:36:08.895Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts
+[ingest] Processing file 195/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/audit-action/route.ts
+[ingest] Chunked into 2 chunks.
+[2026-04-29T01:36:09.192Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/audit-action/route.ts
+[ingest] Processing file 196/196: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/approve/route.ts
+[2026-04-29T01:36:09.195Z] MCP-ERR: [ingest] Chunked into 2 chunks.
+[2026-04-29T01:36:09.567Z] MCP-ERR: [ingest] Stored chunks for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/approve/route.ts
+[ingest] All files processed.
+[2026-04-29T01:36:09.567Z] MCP-ERR: [MCP] index_codebase finished
+[2026-04-29T01:36:09.567Z] MCP: {"result":{"content":[{"type":"text","text":"index_codebase completed successfully for /Users/stillbulldog35/Documents/personalGithub/the-dev-squad"}]},"jsonrpc":"2.0","id":2}

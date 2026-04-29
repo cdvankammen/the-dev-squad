@@ -146,6 +146,28 @@ test.describe('Persistence and recovery flows', () => {
     await expect(page.getByText(/endpoint:/i)).toContainText('http://127.0.0.1:1234');
   });
 
+  test('squad page per-agent model override persists for direct chat', async ({ page }) => {
+    await mockStableAppApis(page);
+    await gotoSquad(page);
+    await waitForProviders(page);
+
+    await page.getByTestId('provider-select').selectOption('lm-studio');
+    await expect(page.getByTestId('model-select')).toHaveValue('local-model-a');
+
+    await page.getByRole('button', { name: /planner/i }).click();
+    const agentModel = page.getByTestId('agent-model-A');
+    await expect(agentModel).toBeVisible();
+    await agentModel.selectOption('local-model-b');
+    await expect(agentModel).toHaveValue('local-model-b');
+
+    await page.reload();
+    await waitForProviders(page);
+    await page.getByRole('button', { name: /planner/i }).click();
+
+    await expect(page.getByTestId('provider-select')).toHaveValue('lm-studio');
+    await expect(page.getByTestId('agent-model-A')).toHaveValue('local-model-b');
+  });
+
   test('start pipeline sends provider, model, and per-agent overrides', async ({ page }) => {
     await mockStableAppApis(page);
 

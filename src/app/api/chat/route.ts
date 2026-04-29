@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
-import { atomicWriteJson } from '@/lib/fileUtils';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
@@ -133,11 +132,7 @@ function findLatestProject(): string | null {
 }
 
 function writeState(file: string, state: Record<string, unknown>) {
-  try {
-    atomicWriteJson(file, state);
-  } catch {
-    try { writeFileSync(file, JSON.stringify(state, null, 2)); } catch {}
-  }
+  writeFileSync(file, JSON.stringify(state, null, 2));
 }
 
 function appendUserEvent(state: Record<string, unknown>, agent: string, message: string) {
@@ -183,7 +178,7 @@ function validateExecutableProvider(modelProvider?: string): string | null {
   const adapter = getModelAdapter(modelProvider);
   if (!adapter) return `Unknown model provider: ${modelProvider}`;
   if (typeof adapter.supportsExecution === 'function' && adapter.supportsExecution() === false) {
-    return `Provider '${modelProvider}' can be discovered in this repo but does not expose executable runner sessions for direct chat/pipeline turns.`;
+    return `Provider '${modelProvider}' is discovery-only in this repo right now. Use 'openclaude' to reach LM Studio/Ollama/OpenAI-compatible backends, or use 'claude-cli' / 'occ'.`;
   }
   if (!adapter.isAvailable()) {
     return `Provider '${modelProvider}' is not available in this environment.`;
@@ -488,20 +483,6 @@ async function handlePipeline(
 
   let state: Record<string, unknown> = {};
   try { state = JSON.parse(readFileSync(eventsFile, 'utf8')); } catch {}
-  // Persist any UI-provided model/provider selections into the staging/project
-  // state so the orchestrator and runners will use the user's choices at runtime.
-  try {
-    let changed = false;
-    if (typeof model === 'string' && model && (state.selectedModel !== model)) {
-      (state as any).selectedModel = model;
-      changed = true;
-    }
-    if (typeof modelProvider === 'string' && modelProvider && (state.selectedProvider !== modelProvider)) {
-      (state as any).selectedProvider = modelProvider;
-      changed = true;
-    }
-    if (changed) writeState(eventsFile, state);
-  } catch {}
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';

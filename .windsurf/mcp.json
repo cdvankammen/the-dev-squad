@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "vexp": {
+      "command": "/Users/stillbulldog35/.nvm/versions/node/v24.11.1/bin/node",
+      "args": [
+        "/Users/stillbulldog35/.vscode-insiders/extensions/vexp.vexp-vscode-2.0.12-darwin-arm64/dist/mcp-server.cjs"
+      ],
+      "env": {
+        "VEXP_WORKSPACE": "/Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
+      },
+      "alwaysAllow": [
+        "run_pipeline",
+        "get_context_capsule",
+        "get_impact_graph",
+        "search_logic_flow",
+        "get_skeleton",
+        "index_status",
+        "workspace_setup",
+        "submit_lsp_edges",
+        "get_session_context",
+        "search_memory",
+        "save_observation"
+      ]
+    }
+  }
+}

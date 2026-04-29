@@ -1,81 +1,160 @@
-/**
- * Central Tool Registry (TypeScript) — canonical names, aliases, helpers
- */
-import { randomUUID } from 'node:crypto';
+import toolSpecs from './tool-registry.json';
 
-export const TOOL_DEFINITIONS = [
-  { name: 'Read' },
-  { name: 'Write' },
-  { name: 'Edit' },
-  { name: 'Bash' },
-  { name: 'Glob' },
-  { name: 'Grep' },
-  { name: 'WebSearch' },
-  { name: 'WebFetch' },
-];
-
-type RegistryEntry = { id: string; aliases?: string[] };
-const registry: Record<string, RegistryEntry> = {
-  Read: { id: 'Read', aliases: ['read', 'file.read', 'read_file', 'readfile'] },
-  Write: { id: 'Write', aliases: ['write', 'file.write', 'write_file'] },
-  Edit: { id: 'Edit', aliases: ['edit', 'file.edit', 'replace'] },
-  Bash: { id: 'Bash', aliases: ['bash', 'sh', 'shell', 'run'] },
-  Glob: { id: 'Glob', aliases: ['glob', 'find', 'ls', 'list'] },
-  Grep: { id: 'Grep', aliases: ['grep', 'search', 'rg'] },
-  WebSearch: { id: 'WebSearch', aliases: ['websearch', 'searchweb', 'web_search'] },
-  WebFetch: { id: 'WebFetch', aliases: ['webfetch', 'fetch', 'http_get', 'http-get'] },
+type JsonSchema = {
+  type: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+  [key: string]: unknown;
 };
 
-export const TOOL_REGISTRY = registry;
-export const KNOWN_TOOL_NAMES = Object.keys(registry);
+export interface ToolSpec {
+  id: string;
+  aliases: string[];
+  description: string;
+  parameters: JsonSchema;
+  safety?: string;
+}
 
-function canonicalFromAlias(lower: string): string | null {
-  for (const [k, v] of Object.entries(registry)) {
-    if (k.toLowerCase() === lower) return k;
-    if (v.aliases && v.aliases.includes(lower)) return k;
+export interface NormalizedToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+const TOOL_SPECS: ToolSpec[] = (toolSpecs as ToolSpec[]).map((spec) => ({
+  ...spec,
+  aliases: Array.from(new Set([...(spec.aliases || []), spec.id])),
+}));
+
+function sanitizeToolToken(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function makeToolCallId(): string {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  return `tool-${randomId || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+function normalizeToolArgumentPayload(value: unknown): string {
+  if (typeof value === 'string') return value.trim() || '{}';
+  if (value == null) return '{}';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '{}';
   }
-  return null;
+}
+
+function extractToolCallArray(toolCalls: unknown): unknown[] {
+  if (Array.isArray(toolCalls)) return toolCalls;
+  if (!toolCalls || typeof toolCalls !== 'object') return [];
+  const record = toolCalls as Record<string, unknown>;
+  if (Array.isArray(record.tool_calls)) return record.tool_calls;
+  if (Array.isArray(record.calls)) return record.calls;
+  if (Array.isArray(record.tools)) return record.tools;
+  if (record.function || record.name || record.tool) return [record];
+  return [];
+}
+
+const aliasMap = new Map<string, string>();
+for (const spec of TOOL_SPECS) {
+  aliasMap.set(sanitizeToolToken(spec.id), spec.id);
+  for (const alias of spec.aliases) {
+    aliasMap.set(sanitizeToolToken(alias), spec.id);
+  }
+}
+
+export const TOOL_REGISTRY: Record<string, ToolSpec> = Object.fromEntries(
+  TOOL_SPECS.map((spec) => [spec.id, spec]),
+);
+
+export const KNOWN_TOOL_NAMES = TOOL_SPECS.map((spec) => spec.id);
+
+export const TOOL_DEFINITIONS = TOOL_SPECS.map((spec) => ({
+  type: 'function' as const,
+  function: {
+    name: spec.id,
+    description: spec.description,
+    parameters: spec.parameters,
+  },
+}));
+
+export function getToolRegistryEntry(name: unknown): ToolSpec | null {
+  const normalized = normalizeToolName(name);
+  return TOOL_REGISTRY[normalized] || null;
 }
 
 export function normalizeToolName(name: unknown): string {
-  const raw = String(name || '').trim();
-  if (!raw) return raw;
-  let cleaned = raw.replace(/^\[+|\]+$/g, '').trim();
-  cleaned = cleaned.replace(/^TOOL[_:-]*/i, '').trim();
-  cleaned = cleaned.replace(/[^a-zA-Z0-9_\-]/g, '');
-  const lower = cleaned.toLowerCase();
-  const canonical = canonicalFromAlias(lower);
-  if (canonical) return canonical;
-  const m = lower.match(/(read|write|edit|bash|glob|grep|websearch|webfetch)/);
-  if (m) return Object.keys(registry).find((k) => k.toLowerCase() === m[1]) || cleaned;
-  return cleaned;
+  const raw = String(name ?? '').trim();
+  if (!raw) return '';
+
+  const candidates = new Set<string>();
+  const cleaned = raw
+    .replace(/^```(?:json|tool_call|tool_calls)?\s*/i, '')
+    .replace(/```$/i, '')
+    .replace(/^[\s"'`\[{(<]+|[\s"'`\]})>]+$/g, '')
+    .replace(/^(?:tool|tools|toolcall|toolcalls|function|functions|call)[\s_:\-./\\]*/i, '')
+    .trim();
+
+  candidates.add(raw);
+  if (cleaned) candidates.add(cleaned);
+
+  for (const segment of cleaned.split(/[\s/\\.:,_-]+/).filter(Boolean)) {
+    candidates.add(segment);
+  }
+
+  for (const candidate of candidates) {
+    const canonical = aliasMap.get(sanitizeToolToken(candidate));
+    if (canonical) return canonical;
+  }
+
+  const rawToken = sanitizeToolToken(cleaned || raw);
+  for (const [token, canonical] of aliasMap.entries()) {
+    if (token && rawToken.includes(token)) return canonical;
+  }
+
+  return cleaned || raw;
 }
 
 export function isKnownToolName(name: unknown): boolean {
-  if (!name) return false;
-  return KNOWN_TOOL_NAMES.includes(normalizeToolName(name));
+  const normalized = normalizeToolName(name);
+  return KNOWN_TOOL_NAMES.includes(normalized);
 }
 
-export function normalizeToolCalls(toolCalls: any[]): any[] {
-  if (!Array.isArray(toolCalls)) return [];
-  return toolCalls.map((tc) => {
-    const fn = (tc?.function || tc?.name) ? (tc.function || { name: tc.name, arguments: tc.arguments }) : {};
-    const name = normalizeToolName(fn.name || '');
-    const args = fn.arguments || tc.args || tc.arguments || '{}';
-    return {
-      id: tc.id || `tool-${randomUUID()}`,
-      function: {
-        name,
-        arguments: typeof args === 'string' ? args : JSON.stringify(args),
-      },
-    };
-  });
+export function normalizeToolCalls(toolCalls: unknown): NormalizedToolCall[] {
+  return extractToolCallArray(toolCalls)
+    .map((candidate) => {
+      const record = candidate && typeof candidate === 'object'
+        ? (candidate as Record<string, unknown>)
+        : {};
+      const fn = record.function && typeof record.function === 'object'
+        ? (record.function as Record<string, unknown>)
+        : {};
+      const name = normalizeToolName(fn.name ?? record.name ?? record.tool ?? '');
+      if (!name) return null;
+      const args = fn.arguments ?? record.arguments ?? record.input ?? record.params ?? record.args ?? {};
+      return {
+        id: typeof record.id === 'string' && record.id ? record.id : makeToolCallId(),
+        type: 'function' as const,
+        function: {
+          name,
+          arguments: normalizeToolArgumentPayload(args),
+        },
+      };
+    })
+    .filter((call): call is NormalizedToolCall => Boolean(call));
 }
 
 export default {
   TOOL_DEFINITIONS,
   TOOL_REGISTRY,
   KNOWN_TOOL_NAMES,
+  getToolRegistryEntry,
   normalizeToolName,
   normalizeToolCalls,
   isKnownToolName,

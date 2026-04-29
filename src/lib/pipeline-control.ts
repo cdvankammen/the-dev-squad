@@ -1,8 +1,7 @@
 import { spawn, execFileSync, execSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { atomicWriteJson } from './fileUtils';
 
 export const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 export const BUILDS_DIR = join(homedir(), 'Builds');
@@ -23,7 +22,7 @@ function readJson(file: string): Record<string, unknown> | null {
 }
 
 function writeJson(file: string, data: Record<string, unknown>) {
-  atomicWriteJson(file, data);
+  writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
 export function findLatestProject(): string | null {

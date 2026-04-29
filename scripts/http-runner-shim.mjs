@@ -24,8 +24,8 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import os from 'node:os';
-import { TOOL_DEFINITIONS, KNOWN_TOOL_NAMES, normalizeToolName, normalizeToolCalls, isKnownToolName } from './tool-registry.mjs';
-import { parsePossiblyMalformedJson } from './json-repair.mjs';
+import { TOOL_DEFINITIONS, KNOWN_TOOL_NAMES, normalizeToolName, normalizeToolCalls, isKnownToolName, getToolRegistryEntry } from './tool-registry.mjs';
+import { extractStructuredToolCallsFromText, parsePossiblyMalformedJson } from './json-repair.mjs';
 
 // ── Configuration ───────────────────────────────────────────────────
 
@@ -37,6 +37,7 @@ const WEB_TOOL_TIMEOUT_MS = parseInt(process.env.HTTP_SHIM_WEB_TOOL_TIMEOUT_MS |
 const SESSION_DIR = path.join(os.homedir(), '.dev-squad-sessions');
 const MAX_SESSION_CHARS = parseInt(process.env.HTTP_SHIM_MAX_SESSION_CHARS || '24000', 10);
 const APPROVED_BASH_GRANT_FILE = 'pipeline-approved-bash.json';
+const SHOULD_EMIT_RAW_DEBUG = process.env.HTTP_SHIM_DEBUG === '1' || process.env.HTTP_SHIM_EMIT_RAW === '1';
 
 // ── Session persistence (enables --resume across orchestrator calls) ────
 
@@ -166,7 +167,18 @@ function trimSessionContext(messages, maxChars = MAX_SESSION_CHARS) {
 // ── Emit stream-json events (orchestrator-compatible) ───────────────
 
 function emit(event) {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  try {
+    if (SHOULD_EMIT_RAW_DEBUG) {
+      try { process.stderr.write(`EMIT_RAW:${JSON.stringify(event).slice(0, 2000)}\n`); } catch {}
+    }
+    // Use synchronous write to stdout to avoid missing messages if the
+    // parent process exits or pipes are closed quickly. This ensures the
+    // stream is flushed immediately in most environments.
+    fs.writeSync(1, `${JSON.stringify(event)}\n`);
+  } catch (err) {
+    // Fallback to async write if sync write fails for any reason
+    try { process.stdout.write(`${JSON.stringify(event)}\n`); } catch {}
+  }
 }
 
 function debug(msg) {
@@ -318,67 +330,94 @@ function truncateOutput(text, limit = TOOL_OUTPUT_LIMIT) {
 //   ```tool_call\n{"name": "Read", "arguments": {"file_path": "..."}}\n```
 //   <tool_call>{"name": "Bash", "arguments": {"command": "ls"}}</tool_call>
 
-function parseToolCallsFromText(text) {
-  const calls = [];
-  if (!text) return calls;
+function readBalancedJsonFragment(text, startIndex) {
+  const opening = text[startIndex];
+  const closing = opening === '{' ? '}' : opening === '[' ? ']' : null;
+  if (!closing) return null;
 
-  // Pattern 1: ToolName({"key": "value"})
-  // Also tolerate noisy local-model prefixes like [TOOL_CALLS]Read(...) or TOOL_CALLS_Grep(...)
-  const funcPattern = /([A-Za-z_\[\]\-:]+)\s*\(\s*(\{[\s\S]*?\})\s*\)/g;
+  let depth = 0;
+  let inString = false;
+  let quote = '';
+  let escape = false;
+
+  for (let i = startIndex; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === '\\') {
+        escape = true;
+      } else if (char === quote) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      inString = true;
+      quote = char;
+      continue;
+    }
+
+    if (char === opening) depth += 1;
+    if (char === closing) {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          fragment: text.slice(startIndex, i + 1),
+          endIndex: i + 1,
+        };
+      }
+    }
+  }
+
+  return {
+    fragment: text.slice(startIndex),
+    endIndex: text.length,
+  };
+}
+
+function extractFunctionStyleToolCalls(text) {
+  const calls = [];
+  const pattern = /([A-Za-z0-9_.$:[\]\-/]+)\s*\(/g;
   let match;
-  while ((match = funcPattern.exec(text)) !== null) {
+
+  while ((match = pattern.exec(text)) !== null) {
+    const toolName = normalizeToolName(match[1]);
+    if (!isKnownToolName(toolName)) continue;
+
+    let cursor = pattern.lastIndex;
+    while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+    if (text[cursor] !== '{' && text[cursor] !== '[') continue;
+
+    const balanced = readBalancedJsonFragment(text, cursor);
+    if (!balanced?.fragment) continue;
+
     try {
-      const toolName = normalizeToolName(match[1]);
-      if (!KNOWN_TOOL_NAMES.includes(toolName)) continue;
-      const argsObj = parsePossiblyMalformedJson(match[2]);
+      const argsObj = parsePossiblyMalformedJson(balanced.fragment);
       calls.push({
         id: `text-tool-${crypto.randomUUID()}`,
         function: { name: toolName, arguments: JSON.stringify(argsObj) },
       });
-    } catch { /* skip malformed JSON */ }
-  }
-  if (calls.length > 0) return calls;
-
-  // Pattern 2: ```tool_call\n{...}\n``` or <tool_call>{...}</tool_call>
-  const blockPattern = /(?:```tool_call\s*\n([\s\S]*?)\n```|<tool_call>([\s\S]*?)<\/tool_call>)/g;
-  while ((match = blockPattern.exec(text)) !== null) {
-    try {
-      const raw = parsePossiblyMalformedJson(match[1] || match[2]);
-      const toolName = normalizeToolName(raw.name);
-      if (toolName && raw.arguments && KNOWN_TOOL_NAMES.includes(toolName)) {
-        calls.push({
-          id: `text-tool-${crypto.randomUUID()}`,
-          function: {
-            name: toolName,
-            arguments: typeof raw.arguments === 'string'
-              ? raw.arguments
-              : JSON.stringify(raw.arguments),
-          },
-        });
-      }
-    } catch { /* skip malformed JSON */ }
-  }
-  if (calls.length > 0) return calls;
-
-  // Pattern 3: JSON object with "tool" or "name" field in the text
-  const jsonPattern = /\{[^{}]*"(?:tool|name)"\s*:\s*"([^"]+)"[^{}]*\}/g;
-  while ((match = jsonPattern.exec(text)) !== null) {
-    try {
-      const raw = parsePossiblyMalformedJson(match[0]);
-      const name = normalizeToolName(raw.tool || raw.name);
-      if (!KNOWN_TOOL_NAMES.includes(name)) continue;
-      const args = raw.arguments || raw.input || raw.params || {};
-      calls.push({
-        id: `text-tool-${crypto.randomUUID()}`,
-        function: {
-          name,
-          arguments: typeof args === 'string' ? args : JSON.stringify(args),
-        },
-      });
-    } catch { /* skip */ }
+      pattern.lastIndex = balanced.endIndex;
+    } catch {
+      // skip malformed JSON fragments and continue scanning
+    }
   }
 
   return calls;
+}
+
+function parseToolCallsFromText(text) {
+  if (!text) return [];
+
+  const structuredCalls = normalizeToolCalls(extractStructuredToolCallsFromText(text))
+    .filter((tc) => isKnownToolName(tc?.function?.name));
+  if (structuredCalls.length > 0) return structuredCalls;
+
+  return normalizeToolCalls(extractFunctionStyleToolCalls(text))
+    .filter((tc) => isKnownToolName(tc?.function?.name));
 }
 
 // Tool normalization helpers provided by ./tool-registry.mjs
@@ -938,6 +977,7 @@ async function agentLoop(parsed) {
     process.env.LM_STUDIO_MODEL ||
     (isLmStudio ? 'local-model' : isOllama ? 'llama3.2' : 'gpt-4o-mini');
 
+  debug(`[http-runner-shim] provider=${parsed.provider || 'openai'} baseUrl=${baseUrl} model=${model} apiKeyPresent=${Boolean(apiKey)}`);
   // ── Session resume support ──────────────────────────────────────
   // If --resume SESSION_ID was passed, load the saved conversation history.
   // This enables multi-turn agent continuity across orchestrator calls —
@@ -1002,6 +1042,7 @@ When your task is complete, provide a clear summary of what you did.`;
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   let finalResult = '';
   let turn = 0;
+  const argRepairRetries = new Map();
 
   // Detect if the provider supports tool calling by trying the first request
   // with tools. If it fails or returns no tool_calls, we fall back to
@@ -1027,6 +1068,7 @@ When your task is complete, provide a clear summary of what you did.`;
 
     let payload;
     try {
+      debug(`[http-shim-debug] OUTGOING messages roles=${messages.map((m) => m.role).join(',')} messages_count=${messages.length} tool_calls=${(requestBody.tool_calls || []).length}`);
       const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
@@ -1034,6 +1076,9 @@ When your task is complete, provide a clear summary of what you did.`;
       });
 
       const raw = await response.text();
+      if (process.env.HTTP_SHIM_DEBUG === '1') {
+        debug(`RESPONSE RAW (truncated 2k): ${String(raw).slice(0, 2000).replace(/\n/g, '\\n')}`);
+      }
       if (!response.ok) {
         // If tools caused a failure, retry without tools (single-shot fallback)
         if (supportsTools && (response.status === 400 || response.status === 422)) {
@@ -1115,7 +1160,9 @@ When your task is complete, provide a clear summary of what you did.`;
     // Process tool calls — emit as tool_use events and execute them
     const toolUseBlocks = [];
     const toolResultMessages = [];
+    let needRetry = false;
 
+    outerToolLoop:
     for (const tc of effectiveToolCalls) {
       const toolName = normalizeToolName(tc.function?.name);
       const toolUseId = tc.id || `tool-${crypto.randomUUID()}`;
@@ -1128,7 +1175,11 @@ When your task is complete, provide a clear summary of what you did.`;
         const msg = `Invalid tool arguments for ${toolName}: ${err.message || String(err)}\nOriginal: ${String(tc.function?.arguments).slice(0, 800)}`;
         debug(msg);
 
-        // Emit a tool_result error back to the agent so it can fix its output
+        // Track repair attempts per tool call so we only retry once
+        const prev = argRepairRetries.get(toolUseId) || 0;
+        argRepairRetries.set(toolUseId, prev + 1);
+
+        // Emit a tool_result error back to the orchestrator for visibility
         emit({
           type: 'user',
           message: {
@@ -1144,7 +1195,20 @@ When your task is complete, provide a clear summary of what you did.`;
 
         // Also add to tool result messages so the next model call sees the error
         toolResultMessages.push({ role: 'tool', tool_call_id: toolUseId, content: msg });
-        // Skip execution of the tool since args are invalid
+
+        // If we haven't retried yet, ask the model to re-emit ONLY the JSON arguments
+        if (prev < 1) {
+          const schema = (typeof getToolRegistryEntry === 'function' && getToolRegistryEntry(toolName)) || null;
+          const schemaText = schema ? JSON.stringify(schema.parameters || {}) : '{}';
+          const repairPrompt = `The previous tool call for \"${toolName}\" returned invalid JSON arguments: ${err.message}.\nOriginal output: ${String(tc.function?.arguments).slice(0, 800)}\n\nPlease respond with ONLY a single JSON object that is the tool arguments (no surrounding text, no markdown fences). The arguments should match this schema: ${schemaText}`;
+
+          messages.push({ role: 'user', content: repairPrompt });
+          needRetry = true;
+          // Stop processing further tool calls in this turn so we can let the model fix the arguments
+          break outerToolLoop;
+        }
+
+        // Already retried once — give up on executing this tool and continue
         continue;
       }
 

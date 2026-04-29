@@ -77,5 +77,6 @@
     "github.copilot.chat.switchAgent.enabled": true,
     "github.copilot.chat.tools.defaultToolsGrouped": false,
     "github.copilot.chat.useResponsesApiTruncation": false,
-    "chat.agent.maxRequests": 999999
+    "chat.agent.maxRequests": 999999,
+    "taskplanner.aiTool": "vscode-chat"
 }

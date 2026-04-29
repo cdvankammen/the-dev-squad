@@ -85,6 +85,32 @@ async function startMockServer() {
         return;
       }
 
+      if (String(promptText).includes('text-tool-fallback') && !hasToolResult) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            id: 'chatcmpl-mock-text-tool',
+            object: 'chat.completion',
+            model,
+            choices: [
+              {
+                index: 0,
+                finish_reason: 'stop',
+                message: {
+                  role: 'assistant',
+                  content: `I need to search first.\n\n\
+\
+\
+\`\`\`tool_call\n{"tool_calls":[{"name":"TOOL_CALLS_Grep","arguments":{"pattern":"mock-response","path":"${process.cwd().replace(/\\/g, '\\\\')}"}}]}\n\`\`\``,
+                },
+              },
+            ],
+            usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+          }),
+        );
+        return;
+      }
+
         if (String(promptText).includes('webfetch-test') && !hasToolResult) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
@@ -136,6 +162,8 @@ async function startMockServer() {
                   role: 'assistant',
                   content: String(promptText).includes('webfetch-test')
                     ? `webfetch-ok:${String(toolOutput).includes('mock-web-page-ok')}`
+                    : String(promptText).includes('text-tool-fallback')
+                      ? 'text-tool-fallback-ok'
                     : 'tool-normalization-ok',
                 },
               },
@@ -258,8 +286,64 @@ async function runToolNormalization(createRunner, provider) {
   }
   console.log(`[${provider}/tool-normalization] exit=${exitCode}`);
 
-  assert(stdout.includes('tool-normalization-ok'), `[${provider}] noisy tool name run did not finish successfully`);
-  assert(!stdout.includes('Unknown tool:'), `[${provider}] noisy tool name still hit unknown-tool handling`);
+  // Dump the full captured stdout for easier diagnosis when assertions fail
+  console.log(`[${provider}/tool-normalization] stdout full:\n${stdout}`);
+  try {
+    const outPath = path.join(os.tmpdir(), `dev-squad-${provider}-tool-normalization-stdout.log`);
+    fs.writeFileSync(outPath, stdout, 'utf8');
+    console.log(`[${provider}/tool-normalization] wrote stdout to ${outPath}`);
+  } catch (err) {
+    console.log('Failed to write stdout to temp file:', err?.message || String(err));
+  }
+    assert(stdout.includes('tool-normalization-ok'), `[${provider}] noisy tool name run did not finish successfully`);
+
+    const parsedEventsTool = parseJsonLines(stdout);
+    const badToolErrorsTool = parsedEventsTool.filter((ev) => {
+      if (ev?.type !== 'user') return false;
+      const msgs = Array.isArray(ev.message?.content) ? ev.message.content : [];
+      return msgs.some((m) => m?.type === 'tool_result' && m.is_error && typeof m.content === 'string' && m.content.includes('Unknown tool:'));
+    });
+    assert(badToolErrorsTool.length === 0, `[${provider}] noisy tool name still hit unknown-tool handling`);
+
+    const toolUseNamesTool = parsedEventsTool
+      .filter((event) => event.type === 'assistant' && event.message?.content)
+      .flatMap((event) => event.message.content)
+      .filter((block) => block?.type === 'tool_use')
+      .map((block) => block.name);
+    assert(toolUseNamesTool.includes('Grep'), `[${provider}] noisy tool name was not normalized into a Grep tool_use block`);
+  
+}
+
+async function runTextToolFallback(createRunner, provider) {
+  const runner = createRunner('host');
+  const child = runner.spawn({
+    prompt: `text-tool-fallback-${provider}`,
+    model: 'mock-model-v1',
+    modelProvider: provider,
+    projectDir: process.cwd(),
+    systemPrompt: 'You are a terse test assistant.',
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const exitCode = await new Promise((resolve) => {
+    child.on('close', (code) => resolve(code ?? 0));
+  });
+
+  if (stderr.trim()) {
+    console.log(`[${provider}/text-tool-fallback] stderr:`, stderr.trim());
+  }
+  console.log(`[${provider}/text-tool-fallback] exit=${exitCode}`);
+
+  assert(stdout.includes('text-tool-fallback-ok'), `[${provider}] text-based tool fallback did not complete successfully`);
 
   const parsedEvents = parseJsonLines(stdout);
   const toolUseNames = parsedEvents
@@ -267,7 +351,7 @@ async function runToolNormalization(createRunner, provider) {
     .flatMap((event) => event.message.content)
     .filter((block) => block?.type === 'tool_use')
     .map((block) => block.name);
-  assert(toolUseNames.includes('Grep'), `[${provider}] noisy tool name was not normalized into a Grep tool_use block`);
+  assert(toolUseNames.includes('Grep'), `[${provider}] text-based tool fallback was not normalized into Grep`);
 }
 
 async function runWebFetch(createRunner, provider) {
@@ -314,6 +398,7 @@ async function main() {
     await runProvider(createRunner, 'openai-http');
     await runProvider(createRunner, 'lm-studio');
     await runToolNormalization(createRunner, 'lm-studio');
+    await runTextToolFallback(createRunner, 'lm-studio');
     await runWebFetch(createRunner, 'lm-studio');
     console.log('HTTP runner shim integration OK');
   } finally {
