@@ -70,7 +70,9 @@ export function extractPlanningResearchSummary(events: PlanningEventLike[]): str
   return null;
 }
 
-export function buildPlanningResearchPrompt(phase0Context: string, concept: string): string {
+export function buildPlanningResearchPrompt(projectDir: string, phase0Context: string, concept: string): string {
+  const templatePath = join(projectDir, 'build-plan-template.md');
+  const checklistPath = join(projectDir, 'checklist.md');
   return [
     phase0Context
       ? phase0Context + 'Based on the conversation above, research the plan thoroughly before writing.'
@@ -79,8 +81,8 @@ export function buildPlanningResearchPrompt(phase0Context: string, concept: stri
     'YOUR ONLY JOB RIGHT NOW: finish the research pass for plan.md.',
     '',
     'Follow these steps exactly:',
-    '1. Read build-plan-template.md in this directory. Follow it step by step.',
-    '2. Read checklist.md if it exists. Treat it as shared team doctrine.',
+    `1. Read ${templatePath}. Follow it step by step.`,
+    `2. Read ${checklistPath} if it exists. Treat it as shared team doctrine.`,
     '3. Research the concept — read docs, source code, web search, verify packages.',
     '4. Resolve every important unknown before the plan exists.',
     '5. When research is complete, say "Research complete" and STOP.',
