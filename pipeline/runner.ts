@@ -1,8 +1,9 @@
 import { execFileSync, spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { getBaseUrlForProvider } from '../src/lib/providerConfig.ts';
 
 export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
@@ -13,6 +14,7 @@ export interface RunnerOptions {
   projectDir: string;
   pipelineDir?: string;
   model: string;
+  provider?: string;
   roleFile?: string;
   systemPrompt?: string;
   resume?: string;
@@ -218,6 +220,35 @@ function permissionArgs(): string[] {
   return ['--permission-mode', PERMISSION_MODE];
 }
 
+function httpShimPath(): string {
+  return resolve(import.meta.dirname || __dirname, '..', 'scripts', 'http-runner-shim.mjs');
+}
+
+function buildOpenCodeArgs(opts: RunnerOptions): string[] {
+  const args: string[] = [
+    'run',
+    opts.prompt,
+    '--format', 'json',
+    '--pure',
+    '--model', opts.model,
+    '--dir', opts.projectDir,
+  ];
+
+  if (hasValue(opts.resume)) {
+    args.push('--session', opts.resume);
+  }
+
+  return args;
+}
+
+function buildHttpShimArgs(opts: RunnerOptions): string[] {
+  return [
+    httpShimPath(),
+    '--provider', String(opts.provider || 'openai-compat'),
+    ...buildClaudeArgs(opts),
+  ];
+}
+
 export function buildClaudeArgs(opts: RunnerOptions): string[] {
   if (!hasValue(opts.roleFile) && !hasValue(opts.systemPrompt)) {
     throw new Error('RunnerOptions requires either roleFile or systemPrompt');
@@ -299,6 +330,22 @@ export function buildRunnerEnv(opts: RunnerOptions): NodeJS.ProcessEnv {
 
   if (hasValue(opts.securityMode)) {
     env.PIPELINE_SECURITY_MODE = opts.securityMode;
+  }
+
+  if (hasValue(opts.provider) && opts.provider !== 'claude') {
+    env.MODEL_PROVIDER = opts.provider;
+    const baseUrl = getBaseUrlForProvider(opts.provider);
+    if (opts.provider === 'lm-studio') {
+      env.LM_STUDIO_BASE_URL = baseUrl;
+      env.OPENAI_BASE_URL = baseUrl;
+    } else if (opts.provider === 'ollama') {
+      env.OPENAI_BASE_URL = baseUrl;
+    } else if (opts.provider === 'openwebui') {
+      env.OPENWEBUI_BASE_URL = baseUrl;
+      env.OPENAI_BASE_URL = baseUrl;
+    } else {
+      env.OPENAI_BASE_URL = baseUrl;
+    }
   }
 
   return env;
@@ -390,6 +437,22 @@ export function buildDockerArgs(
 
 export class HostRunner implements Runner {
   spawn(opts: RunnerOptions): SpawnedRunnerChild {
+    if (opts.provider === 'opencode') {
+      return withBackend(nodeSpawn('opencode', buildOpenCodeArgs(opts), {
+        cwd: opts.projectDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildRunnerEnv(opts),
+      }), 'host');
+    }
+
+    if (hasValue(opts.provider) && opts.provider !== 'claude') {
+      return withBackend(nodeSpawn(process.execPath, buildHttpShimArgs(opts), {
+        cwd: opts.projectDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildRunnerEnv(opts),
+      }), 'host');
+    }
+
     return withBackend(nodeSpawn('claude', buildClaudeArgs(opts), {
       cwd: opts.projectDir,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -497,6 +560,10 @@ export class AutoRunner implements Runner {
   private warned = false;
 
   spawn(opts: RunnerOptions): SpawnedRunnerChild {
+    if (hasValue(opts.provider) && opts.provider !== 'claude') {
+      return this.host.spawn(opts);
+    }
+
     if (opts.forceHost) {
       return this.host.spawn(opts);
     }

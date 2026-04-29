@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
@@ -114,6 +115,28 @@ function getStagingState(): Record<string, unknown> {
   return fresh;
 }
 
+function expandHomePath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith('~/')) return join(homedir(), input.slice(2));
+  return input;
+}
+
+function resolveWorkingDirectory(input: unknown, fallbackDir: string): string {
+  const raw = String(input || '').trim();
+  const target = raw ? resolve(expandHomePath(raw)) : fallbackDir;
+  mkdirSync(target, { recursive: true });
+  return target;
+}
+
+function buildWorkspaceGuard(workspaceDir: string): string {
+  return [
+    `WORKSPACE BOUNDARY: ${workspaceDir}`,
+    `Stay strictly within ${workspaceDir}.`,
+    `Do not read, write, create, rename, delete, launch, or run commands outside ${workspaceDir}.`,
+    'You may create folders and files inside this workspace only.',
+  ].join('\n');
+}
+
 function findLatestProject(): string | null {
   try {
     const dirs = readdirSync(BUILDS_DIR)
@@ -179,7 +202,13 @@ function streamClaude(
   sessionId: string,
 ): Promise<NextResponse> {
   return new Promise<NextResponse>((resolveResponse) => {
-    const child = runner.spawn(opts);
+    let child: ReturnType<typeof runner.spawn>;
+    try {
+      child = runner.spawn(opts);
+    } catch (error) {
+      resolveResponse(NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }));
+      return;
+    }
     const canFallbackToHost = child.backend === 'docker' && runner.supportsHostFallback(opts);
 
     if (child.backend === 'docker') {
@@ -197,7 +226,7 @@ function streamClaude(
       } catch {}
     }
 
-    const rl = createInterface({ input: child.stdout });
+    const rl = createInterface({ input: child.stdout as NodeJS.ReadableStream });
     let newSessionId = sessionId;
     let lastResultText = '';
     let stderr = '';
@@ -281,11 +310,13 @@ function streamClaude(
       }
     });
 
-    child.stderr.on('data', (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      noteDiagnostic(text);
-    });
+    if (child.stderr) {
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderr += text;
+        noteDiagnostic(text);
+      });
+    }
 
     child.on('close', async () => {
       if (canFallbackToHost && isRecoverableDockerAuthFailure(`${diagnosticTail}\n${stderr}\n${lastResultText}`)) {
@@ -326,19 +357,175 @@ function streamClaude(
       } catch {}
       resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
     });
-    child.on('error', () => {
-      resolveResponse(NextResponse.json({ success: false }, { status: 500 }));
+    child.on('error', (error: unknown) => {
+      resolveResponse(NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }));
+    });
+  });
+}
+
+function streamOpenCode(
+  opts: { prompt: string; projectDir: string; model: string; sessionId?: string; agent: string },
+  eventsFile: string,
+  agent: string,
+  sessionId: string,
+): Promise<NextResponse> {
+  return new Promise<NextResponse>((resolveResponse) => {
+    const args = [
+      'run',
+      opts.prompt,
+      '--format', 'json',
+      '--pure',
+      '--model', opts.model,
+      '--dir', opts.projectDir,
+    ];
+    if (opts.sessionId) {
+      args.push('--session', opts.sessionId);
+    }
+
+    let child: ReturnType<typeof nodeSpawn>;
+    try {
+      child = nodeSpawn('opencode', args, {
+        cwd: opts.projectDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          TERM: 'dumb',
+        },
+      });
+    } catch (error) {
+      resolveResponse(NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }));
+      return;
+    }
+
+    const rl = createInterface({ input: child.stdout as unknown as NodeJS.ReadableStream });
+    let newSessionId = sessionId;
+    let stderr = '';
+    let diagnosticTail = '';
+
+    function noteDiagnostic(text: string) {
+      if (!text) return;
+      diagnosticTail = `${diagnosticTail}\n${text}`.slice(-12_000);
+    }
+
+    rl.on('line', (line) => {
+      if (!line.trim()) return;
+      noteDiagnostic(line);
+
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return;
+      }
+
+      const part = (event.part as Record<string, unknown> | undefined) || {};
+      const streamedSessionId =
+        (event.sessionID as string) ||
+        (event.sessionId as string) ||
+        (event.session_id as string) ||
+        (part.sessionID as string) ||
+        (part.sessionId as string) ||
+        (part.session_id as string) ||
+        '';
+      if (streamedSessionId) {
+        newSessionId = streamedSessionId;
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          if (!s.sessions) s.sessions = {};
+          s.sessions[agent] = streamedSessionId;
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      }
+
+      const type = String(event.type || part.type || '');
+      const lowerType = type.toLowerCase();
+
+      if (lowerType === 'text') {
+        const text = String(event.text || part.text || '').trim();
+        if (text) {
+          try {
+            const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+            s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'text', text });
+            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          } catch {}
+        }
+      } else if (lowerType.includes('tool')) {
+        const toolName = String((part.name as string) || (event.tool as string) || type || 'tool').trim();
+        const text = toolName ? `Tool event: ${toolName}` : 'Tool event';
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'tool_call', text });
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      } else if (lowerType === 'step_start') {
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'status', text: 'OpenCode started a step.' });
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      } else if (lowerType === 'step_finish') {
+        const tokens = (part.tokens as {
+          input?: number;
+          output?: number;
+          cacheRead?: number;
+          cacheWrite?: number;
+          cache?: { read?: number; write?: number };
+        } | undefined) || {};
+        const cost = Number((part.cost as number) || 0);
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          if (!s.sessions) s.sessions = {};
+          s.sessions[agent] = newSessionId;
+          if (s.usage) {
+            s.usage.inputTokens = (s.usage.inputTokens || 0) + Number(tokens.input || 0);
+            s.usage.outputTokens = (s.usage.outputTokens || 0) + Number(tokens.output || 0);
+            s.usage.cacheReadTokens = (s.usage.cacheReadTokens || 0) + Number(tokens.cacheRead || tokens.cache?.read || 0);
+            s.usage.cacheWriteTokens = (s.usage.cacheWriteTokens || 0) + Number(tokens.cacheWrite || tokens.cache?.write || 0);
+            s.usage.totalCostUsd = (s.usage.totalCostUsd || 0) + cost;
+          }
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      }
+    });
+
+    if (child.stderr) {
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderr += text;
+        noteDiagnostic(text);
+      });
+    }
+
+    child.on('close', async () => {
+      try {
+        const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+        if (s.agentStatus) s.agentStatus[agent] = 'idle';
+        writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+      } catch {}
+
+      if (stderr.trim()) {
+        noteDiagnostic(stderr);
+      }
+
+      void diagnosticTail;
+      resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
+    });
+
+    child.on('error', (error) => {
+      resolveResponse(NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 }));
     });
   });
 }
 
 // ── Manual mode ─────────────────────────────────────────────────────
 
-function handleManual(agent: string, message: string, model: string) {
+function handleManual(agent: string, message: string, model: string, provider: string, workingDir?: string) {
   const eventsFile = join(MANUAL_DIR, 'manual-state.json');
   const state = getManualState();
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
+  const manualProjectDir = resolveWorkingDirectory(workingDir, MANUAL_DIR);
+  const manualSystemPrompt = MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A;
 
   // Set agent active
   const agentStatus = (state.agentStatus as Record<string, string>) || {};
@@ -359,14 +546,31 @@ function handleManual(agent: string, message: string, model: string) {
   writeFileSync(eventsFile, JSON.stringify(state, null, 2));
 
   const safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
+  const guardedMessage = [buildWorkspaceGuard(manualProjectDir), '', safeMessage].join('\n\n');
+
+  if (provider === 'opencode') {
+    return streamOpenCode(
+      {
+        prompt: sessionId ? guardedMessage : `${manualSystemPrompt}\n\n${guardedMessage}`,
+        projectDir: manualProjectDir,
+        model,
+        sessionId: sessionId || undefined,
+        agent,
+      },
+      eventsFile,
+      agent,
+      sessionId
+    );
+  }
 
   return streamClaude(
     {
-      prompt: safeMessage,
-      projectDir: MANUAL_DIR,
+      prompt: guardedMessage,
+      projectDir: manualProjectDir,
       model,
+      provider,
       resume: sessionId || undefined,
-      systemPrompt: sessionId ? undefined : (MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A),
+      systemPrompt: manualSystemPrompt,
     },
     eventsFile,
     agent,
@@ -379,6 +583,9 @@ function handleManual(agent: string, message: string, model: string) {
 function handlePipeline(
   agent: string,
   message: string,
+  model: string,
+  provider: string,
+  workingDir?: string,
   defaults?: { securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean }
 ) {
   let projectDir: string;
@@ -414,6 +621,9 @@ function handlePipeline(
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
+  const pipelineModel = model || 'claude-opus-4-6';
+  const pipelineProvider = provider || 'claude';
+  const workspaceDir = resolveWorkingDirectory(workingDir, projectDir);
 
   if (agent === 'S') {
     const intent = parseSupervisorIntent(message);
@@ -574,7 +784,8 @@ function handlePipeline(
           prompt: conceptContext,
           projectDir,
           pipelineDir: BUILDUI_DIR,
-          model: 'claude-opus-4-6',
+            model: pipelineModel,
+            provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
           roleFile: ROLE_FILES.S,
           resume: sessionId || undefined,
           pipelineAgent: 'S',
@@ -620,10 +831,11 @@ function handlePipeline(
 
   return streamClaude(
     {
-      prompt: finalMessage,
+          prompt: [buildWorkspaceGuard(workspaceDir), '', finalMessage].join('\n\n'),
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: 'claude-opus-4-6',
+          model: pipelineModel,
+          provider: pipelineProvider === 'claude' ? undefined : pipelineProvider,
       roleFile,
       resume: sessionId || undefined,
       pipelineAgent: agent as PipelineAgentId,
@@ -638,12 +850,12 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { agent, message, mode, model, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
+  const { agent, message, mode, model, provider, workingDir, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
 
   if (mode === 'manual') {
-    return handleManual(agent, message, model || 'claude-sonnet-4-6');
+    return handleManual(agent, message, model || 'claude-sonnet-4-6', provider || 'claude', workingDir);
   }
-  return handlePipeline(agent, message, {
+  return handlePipeline(agent, message, model || 'claude-opus-4-6', provider || 'claude', workingDir, {
     securityMode: securityMode === 'strict' ? 'strict' : 'fast',
     permissionMode: permissionMode === 'plan' ? 'plan' : permissionMode === 'dangerously-skip-permissions' ? 'dangerously-skip-permissions' : 'auto',
     runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',

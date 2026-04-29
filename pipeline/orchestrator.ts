@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -65,7 +65,21 @@ const ROLE_C = join(BUILDUI_DIR, 'role-c.md');
 const ROLE_D = join(BUILDUI_DIR, 'role-d.md');
 const ROLE_E = join(BUILDUI_DIR, 'role-e.md');
 
-const MODEL = 'claude-opus-4-6';
+const DEFAULT_MODEL = 'claude-opus-4-6';
+const DEFAULT_PROVIDER = 'claude';
+const ENV_MODEL = process.env.PIPELINE_MODEL || '';
+const ENV_PROVIDER = process.env.PIPELINE_PROVIDER || '';
+const ENV_WORKING_DIR = process.env.PIPELINE_WORKING_DIR || '';
+const ENV_AGENT_MODELS = (() => {
+  try {
+    const raw = process.env.PIPELINE_AGENT_MODELS || '';
+    if (!raw.trim()) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+})();
 
 // Effort levels per agent — quality gates (B, D, E) get max reasoning depth
 const AGENT_EFFORT: Record<string, string> = {
@@ -221,6 +235,10 @@ interface PipelineState {
   auditFindings?: AuditFinding[];
   auditDeployPending?: boolean;
   auditActionInFlight?: boolean;
+  selectedModel?: string;
+  selectedProvider?: string;
+  requestedWorkingDir?: string;
+  agentModels?: Record<string, string>;
 }
 
 const eventsFile = join(projectDir, 'pipeline-events.json');
@@ -250,6 +268,10 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditFindings: Array.isArray(existing.auditFindings) ? existing.auditFindings : [],
     auditDeployPending: existing.auditDeployPending === true,
     auditActionInFlight: existing.auditActionInFlight === true,
+    selectedModel: typeof existing.selectedModel === 'string' ? existing.selectedModel : (ENV_MODEL || DEFAULT_MODEL),
+    selectedProvider: typeof existing.selectedProvider === 'string' ? existing.selectedProvider : (ENV_PROVIDER || DEFAULT_PROVIDER),
+    requestedWorkingDir: typeof existing.requestedWorkingDir === 'string' ? existing.requestedWorkingDir : ENV_WORKING_DIR,
+    agentModels: existing.agentModels && typeof existing.agentModels === 'object' ? existing.agentModels as Record<string, string> : ENV_AGENT_MODELS,
   };
 } else {
   // Fresh start — but preserve any existing events (concept-phase conversation)
@@ -292,6 +314,10 @@ if (resumingExistingProject && existsSync(eventsFile)) {
     auditFindings: [],
     auditDeployPending: false,
     auditActionInFlight: false,
+    selectedModel: ENV_MODEL || DEFAULT_MODEL,
+    selectedProvider: ENV_PROVIDER || DEFAULT_PROVIDER,
+    requestedWorkingDir: ENV_WORKING_DIR,
+    agentModels: ENV_AGENT_MODELS,
   };
 }
 
@@ -436,6 +462,31 @@ function agentRoleLabel(agent: AgentId): string {
   }
 }
 
+function buildWorkspaceGuardPrompt(workspaceDir: string): string {
+  return [
+    `WORKSPACE BOUNDARY: ${workspaceDir}`,
+    `Stay strictly within ${workspaceDir}.`,
+    `Do not read, write, create, rename, delete, launch, or run commands outside ${workspaceDir}.`,
+    'You may create folders and files inside this workspace only.',
+  ].join('\n');
+}
+
+function looksLikePlanningWritePrompt(prompt: string): boolean {
+  return prompt.includes('Write the full build plan to') && prompt.includes('plan.md');
+}
+
+function hasStablePlanDraft(): boolean {
+  const planPath = join(projectDir, 'plan.md');
+  try {
+    if (!existsSync(planPath)) return false;
+    const stats = statSync(planPath);
+    if (stats.size < 1500) return false;
+    return Date.now() - stats.mtimeMs > 30_000;
+  } catch {
+    return false;
+  }
+}
+
 async function runClaudeTurn(
   agent: AgentId,
   prompt: string,
@@ -458,12 +509,18 @@ async function runClaudeTurn(
 }> {
   return new Promise((resolve, reject) => {
     const safePrompt = prompt.startsWith('-') ? 'User says: ' + prompt : prompt;
+    const workspaceDir = state.requestedWorkingDir || ENV_WORKING_DIR || projectDir;
+    const guardedPrompt = `${buildWorkspaceGuardPrompt(workspaceDir)}\n\n${safePrompt}`;
+    const isPlanningWriteTurn = agent === 'A' && state.currentPhase === 'planning' && looksLikePlanningWritePrompt(safePrompt);
     const effort = AGENT_EFFORT[agent] || 'high';
+    const selectedModel = state.agentModels?.[agent] || ENV_AGENT_MODELS?.[agent] || state.selectedModel || ENV_MODEL || DEFAULT_MODEL;
+    const selectedProvider = state.selectedProvider || ENV_PROVIDER || DEFAULT_PROVIDER;
     const runnerOpts = {
-      prompt: safePrompt,
+      prompt: guardedPrompt,
       projectDir,
       pipelineDir: BUILDUI_DIR,
-      model: MODEL,
+      model: selectedModel,
+      provider: selectedProvider === 'claude' ? undefined : selectedProvider,
       roleFile: opts.role,
       resume: opts.resume,
       jsonSchema: opts.jsonSchema,
@@ -498,6 +555,7 @@ async function runClaudeTurn(
     let stalled = false;
     let settled = false;
     let lastStreamActivityAt = Date.now();
+    let lastVisibleActivityAt = Date.now();
     let bashInFlight = false;
     let diagnosticTail = '';
 
@@ -509,8 +567,25 @@ async function runClaudeTurn(
     const rl = createInterface({ input: child.stdout });
     const stallWatcher = setInterval(() => {
       if (settled) return;
+      if (isPlanningWriteTurn && hasStablePlanDraft()) {
+        settled = true;
+        clearInterval(stallWatcher);
+        clearActiveTurn(agent);
+        emit('system', state.currentPhase, 'status', 'Detected a stable plan.md draft from the local provider write turn; advancing without waiting for more narration.');
+        resolve({
+          result: 'Draft written',
+          sessionId: currentSessionId,
+          structured,
+          permissionDenied,
+          interruptedForApproval,
+          stalled: false,
+          fallbackToHost: false,
+        });
+        child.kill('SIGTERM');
+        return;
+      }
       if (bashInFlight) { lastStreamActivityAt = Date.now(); return; }
-      if (!shouldMarkTurnStalled(lastStreamActivityAt, Date.now(), TURN_IDLE_TIMEOUT_MS)) return;
+      if (!shouldMarkTurnStalled(lastVisibleActivityAt, Date.now(), TURN_IDLE_TIMEOUT_MS)) return;
 
       const canAutoResume = canAutoResumeTurn(agent, state.currentPhase) && !!currentSessionId;
       const reason = canAutoResume
@@ -544,6 +619,7 @@ async function runClaudeTurn(
       if (!line.trim()) return;
       noteDiagnostic(line);
       lastStreamActivityAt = Date.now();
+      lastVisibleActivityAt = Date.now();
       noteActiveTurnActivity(agent);
 
       let event: Record<string, unknown>;
@@ -965,6 +1041,18 @@ function parseSignal(result: string): Record<string, unknown> {
     }
     // Try to detect positive/negative signals from text
     const lower = result.toLowerCase();
+    if (lower.includes('"status"') && lower.includes('question')) {
+      emit('system', state.currentPhase, 'status', 'Parsed question signal from text');
+      return { status: 'questions', questions: [result] };
+    }
+    if (lower.includes('"status"') && lower.includes('issue')) {
+      emit('system', state.currentPhase, 'status', 'Parsed issue signal from text');
+      return { status: 'issues', issues: [result] };
+    }
+    if (lower.includes('"status"') && lower.includes('fail')) {
+      emit('system', state.currentPhase, 'status', 'Parsed failure signal from text');
+      return { status: 'failed', failures: [result] };
+    }
     if (lower.includes('all tests pass') || lower.includes('tests passed') || lower.includes('approved') || lower.includes('code is correct')) {
       emit('system', state.currentPhase, 'status', 'Parsed positive signal from text');
       return { status: 'approved' };

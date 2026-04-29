@@ -10,6 +10,7 @@ import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
+import { useProviderRuntime } from '@/lib/use-provider-runtime';
 
 const AGENT_NAMES: Record<AgentId, string> = {
   A: 'Planner', B: 'Reviewer', C: 'Coder', D: 'Tester', E: 'Security Auditor', S: 'Supervisor',
@@ -41,6 +42,17 @@ const MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
 ];
 
+const PROVIDER_OPTIONS = [
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'lm-studio', label: 'LM Studio' },
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'openwebui', label: 'Open WebUI' },
+  { value: 'openai-compat', label: 'OpenAI-Compatible' },
+  { value: 'claude-code-router', label: 'Claude Code Router' },
+  { value: 'openclaude-code', label: 'OpenClaude Code' },
+  { value: 'opencode', label: 'OpenCode' },
+];
+
 const MANUAL_ROLES: Record<string, string> = {
   A: 'Software planning & architecture',
   B: 'Code review & finding gaps',
@@ -52,19 +64,42 @@ const MANUAL_ROLES: Record<string, string> = {
 
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
 
   const {
+    providers,
+    models,
+    selectedProvider,
+    setSelectedProvider,
+    providerMode,
+    selectedModel,
+    setSelectedModel,
+    selectedWorkingDir,
+    setSelectedWorkingDir,
+    providerHost,
+    setProviderHost,
+    providerPort,
+    setProviderPort,
+    providerBaseUrl,
+    setProviderBaseUrl,
+    providerApiKey,
+    setProviderApiKey,
+    agentModels,
+    setAgentModel,
+    refreshModels,
+  } = useProviderRuntime({ defaultProvider: 'claude', defaultModel: 'claude-sonnet-4-6' });
+
+  const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
+  const [supervisorQueue, setSupervisorQueue] = useState<Array<{ id: string; text: string }>>([]);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
   const [pipelineStarted, setPipelineStarted] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
@@ -86,6 +121,26 @@ export default function PipelinePage() {
   const pipelineRunning = isPipeline && (state.pipelineStatus === 'running' || (!state.buildComplete && (pipelineStarted || hasLivePipelineActivity)));
   const pipelinePaused = isPipeline && state.pipelineStatus === 'paused';
   const pipelineFailed = isPipeline && state.pipelineStatus === 'failed';
+  const providerOptions = providers.length > 0
+    ? providers
+    : PROVIDER_OPTIONS.map((opt) => ({
+        id: opt.value,
+        label: opt.label,
+        description: '',
+        defaultModel: '',
+        mode: opt.value === 'claude' ? 'claude-code-cli' : opt.value === 'opencode' ? 'opencode-cli' : 'openai-compat-http',
+        config: { host: '', port: 0, baseUrl: '', apiKey: '', enabled: true },
+      }));
+  const modelOptions = models.length > 0
+    ? models
+    : MODEL_OPTIONS.map((opt) => ({
+        id: opt.value,
+        label: opt.label,
+        providerId: selectedProvider,
+        source: 'static',
+      }));
+  const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
+  const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
 
   // Auto-scroll: all panels, expanded modal, and live feed
   useEffect(() => {
@@ -156,17 +211,45 @@ export default function PipelinePage() {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleSend() {
-    if (sendingAgents.has('S') || !chatInput.trim()) return;
+  async function dispatchSupervisorMessage(message: string) {
     setSendingAgents(prev => new Set([...prev, 'S']));
-    await sendChat('S', chatInput.trim(), isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
+    try {
+      await sendChat('S', message, isPipeline ? {
+        securityMode: selectedSecurityMode,
+        permissionMode: selectedPermissionMode,
+        runGoal: selectedRunGoal,
+        runFinalAudit: selectedRunFinalAudit,
+      } : undefined);
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    }
+  }
+
+  async function handleSend() {
+    const message = chatInput.trim();
+    if (!message) return;
+    if (sendingAgents.has('S')) {
+      setSupervisorQueue((prev) => [...prev, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text: message }]);
+      setChatInput('');
+      return;
+    }
     setChatInput('');
-    setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    await dispatchSupervisorMessage(message);
+  }
+
+  async function handleSendQueuedSupervisorMessage(itemId: string) {
+    const queued = supervisorQueue.find((item) => item.id === itemId);
+    if (!queued || sendingAgents.has('S')) return;
+    await dispatchSupervisorMessage(queued.text);
+    setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
+  }
+
+  function updateSupervisorQueueItem(itemId: string, text: string) {
+    setSupervisorQueue((prev) => prev.map((item) => (item.id === itemId ? { ...item, text } : item)));
+  }
+
+  function removeSupervisorQueueItem(itemId: string) {
+    setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
   }
 
   async function handleStartPipeline() {
@@ -418,18 +501,81 @@ export default function PipelinePage() {
                   style={{ borderRadius: '0 7px 7px 0' }}
                 >Manual</button>
               </div>
-              {/* Model Picker — manual mode only */}
-              {!isPipeline && (
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <select
+                  title="Provider"
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                >
+                  {providerOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
+                  ))}
+                </select>
+                <select
+                  title="Model"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
                 >
-                  {MODEL_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]">{opt.label}</option>
+                  {modelOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
                   ))}
                 </select>
+                <input
+                  title="Working directory"
+                  value={selectedWorkingDir}
+                  onChange={(e) => setSelectedWorkingDir(e.target.value)}
+                  placeholder="~/Builds/project-root"
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+              {showHttpSettings && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                  <input
+                    title="Host"
+                    value={providerHost}
+                    onChange={(e) => setProviderHost(e.target.value)}
+                    placeholder="127.0.0.1"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="Port"
+                    value={providerPort}
+                    onChange={(e) => setProviderPort(e.target.value)}
+                    placeholder="1234"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="Base URL"
+                    value={providerBaseUrl}
+                    onChange={(e) => setProviderBaseUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:1234"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="API Key"
+                    value={providerApiKey}
+                    onChange={(e) => setProviderApiKey(e.target.value)}
+                    placeholder="optional"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
               )}
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshModels(selectedProvider)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  Refresh Models
+                </button>
+                <span className="text-[10px] text-slate-500">
+                  {selectedProviderDefinition?.mode === 'openai-compat-http'
+                    ? 'Connection settings are saved for this provider and used for dynamic model discovery.'
+                    : 'CLI-style providers use the local runtime and their discovered models are loaded automatically.'}
+                </span>
+              </div>
             </div>
             <div className={`mt-3 rounded-xl border px-3 py-3 ${
               modePosture.tone === 'warning'
@@ -888,13 +1034,45 @@ export default function PipelinePage() {
                       ? `Ask the supervisor anything, or try "${supervisorRecommendation.chatCommand}"`
                       : 'Ask the supervisor anything, or chat with any specialist directly...')
                   : 'Chat with the Supervisor'}
-                disabled={sendingAgents.has('S')}
                 className="max-h-40 flex-1 rounded-lg border border-[#252530] bg-[#14141e] px-3 py-2 text-sm text-white placeholder-[#444] focus:border-emerald-600 focus:outline-none disabled:opacity-30"
               />
-              <button onClick={handleSend} disabled={sendingAgents.has('S') || !chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
+              <button onClick={handleSend} disabled={!chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
                 Send
               </button>
             </div>
+            {supervisorQueue.length > 0 && (
+              <div className="mt-2 space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Pending queue</div>
+                {supervisorQueue.map((item, index) => (
+                  <div key={item.id} className="rounded-md border border-white/10 bg-[#10101a] p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-slate-500">
+                      <span>Queued #{index + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleSendQueuedSupervisorMessage(item.id)}
+                          className="rounded bg-emerald-600 px-2 py-1 text-[9px] font-semibold text-white hover:bg-emerald-500"
+                        >
+                          Send
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSupervisorQueueItem(item.id)}
+                          className="rounded bg-white/10 px-2 py-1 text-[9px] font-semibold text-slate-200 hover:bg-white/15"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <AutoGrowTextarea
+                      value={item.text}
+                      onChange={(e) => updateSupervisorQueueItem(item.id, e.target.value)}
+                      className="min-h-20 w-full rounded-md border border-white/10 bg-[#14141e] px-2 py-1.5 text-xs text-white focus:border-emerald-600 focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -934,11 +1112,23 @@ export default function PipelinePage() {
                 <div className="flex-1">
                   <div className="text-[13px] font-semibold text-[#999]">{AGENT_NAMES[id]}</div>
                   <div className="text-[10px] text-[#444]">{AGENT_ROLES[id]}</div>
+                  <select
+                    title={`Model for ${AGENT_NAMES[id]}`}
+                    value={agentModels[id] || selectedModel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setAgentModel(id, e.target.value)}
+                    className="mt-1 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] text-slate-300 focus:outline-none"
+                  >
+                    {modelOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Handoff dropdown — manual mode only, only if agent has text output */}
                   {!isPipeline && hasTextEvents && (
                     <select
+                      title={`Send ${AGENT_NAMES[id]} output to another agent`}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => { if (e.target.value) { handleHandoff(id, e.target.value as AgentId); e.target.value = ''; } }}
                       defaultValue=""

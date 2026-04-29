@@ -6,6 +6,10 @@ export async function POST(req: NextRequest) {
   let permissionMode = 'auto';
   let runGoal = 'full-build';
   let runFinalAudit = false;
+  let model: string | undefined;
+  let provider: string | undefined;
+  let workingDir: string | undefined;
+  let agentModels: Record<string, string> | undefined;
   try {
     const body = await req.json();
     if (body?.securityMode === 'strict') securityMode = 'strict';
@@ -13,6 +17,12 @@ export async function POST(req: NextRequest) {
     else if (body?.permissionMode === 'dangerously-skip-permissions') permissionMode = 'dangerously-skip-permissions';
     if (body?.runGoal === 'plan-only') runGoal = 'plan-only';
     if (body?.runFinalAudit === true) runFinalAudit = true;
+    if (typeof body?.model === 'string' && body.model.trim()) model = body.model.trim();
+    if (typeof body?.provider === 'string' && body.provider.trim()) provider = body.provider.trim();
+    if (typeof body?.workingDir === 'string' && body.workingDir.trim()) workingDir = body.workingDir.trim();
+    if (body?.agentModels && typeof body.agentModels === 'object' && !Array.isArray(body.agentModels)) {
+      agentModels = body.agentModels as Record<string, string>;
+    }
   } catch {}
 
   const result = startPipelineRun({
@@ -20,6 +30,10 @@ export async function POST(req: NextRequest) {
     permissionMode: permissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
     runGoal: runGoal === 'plan-only' ? 'plan-only' : 'full-build',
     runFinalAudit,
+    model,
+    provider,
+    workingDir,
+    agentModels,
   });
 
   if (!result.success) {
