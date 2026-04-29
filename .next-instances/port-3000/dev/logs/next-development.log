@@ -1,0 +1,51 @@
+[00:00:01.524] Server  LOG     ✓ Ready in 1196ms
+[00:02:15.872] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:02:16.031] Browser ERROR   uncaughtError: Error: Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <RedirectBoundary>
+      <RedirectErrorBoundary router={{...}}>
+        <InnerLayoutRouter url="/" tree={[...]} params={{}} cacheNode={{rsc:<Fragment>, ...}} segmentPath={[...]} ...>
+          <SegmentViewNode type="page" pagePath="page.tsx">
+            <SegmentTrieNode>
+            <ClientPageRoot Component={function PipelinePage} serverProvidedParams={{...}}>
+              <PipelinePage params={Promise} searchParams={Promise}>
+                <div className="p-4 space-y-4">
+                  <div className="grid gap-4" style={{...}}>
+                    <div className="flex flex-..." style={{height:0, ...}}>
+                      <div className="p-2">
+                        <LunarOfficeScene>
+                        <div className="px-2 pb-2 ...">
+                          <div className="grid gap-2...">
+                            <div>
+                            <div>
+                            <div className="space-y-2 ...">
+                              <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
++                               Provider Runtime
+-                               Workspace Root
+                              ...
+                            ...
+                      ...
+                    ...
+                  ...
+          ...
+        ...
+
+[00:02:40.778] Server  WARN    [WARNING] Docker is not running or not installed.
+[00:02:40.778] Server  WARN    [WARNING] Falling back to host runner for sandbox-eligible agents.
+[00:03:57.422] Server  ERROR   ⨯ Error: RunnerOptions requires either roleFile or systemPrompt
+[00:03:57.526] Browser ERROR   unhandledRejection: SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+[00:05:40.450] Server  ERROR   ⨯ Error: RunnerOptions requires either roleFile or systemPrompt
+[00:07:29.604] Server  ERROR   ⨯ Error: RunnerOptions requires either roleFile or systemPrompt
+[00:07:29.707] Browser ERROR   unhandledRejection: SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+[00:08:15.402] Server  ERROR   ⨯ Error: RunnerOptions requires either roleFile or systemPrompt
