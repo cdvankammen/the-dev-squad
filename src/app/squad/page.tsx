@@ -6,6 +6,7 @@ import { Badge } from '@/components/shared/Badge';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
+import { readProviderSelection, writeProviderSelection } from '@/lib/providerStorage';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
 
 const AGENT_NAMES: Record<AgentId, string> = {
@@ -38,10 +39,13 @@ const PHASE_LABELS: Record<string, string> = {
   complete: 'Complete',
 };
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-6', label: 'Opus 4.6' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+const FALLBACK_PROVIDER_OPTIONS = [
+  { id: 'claude', label: 'Claude Code', description: 'Claude Code CLI' },
+  { id: 'opencode', label: 'OpenCode', description: 'OpenCode JSON runner' },
 ];
+
+type ProviderOption = { id: string; label: string; description?: string; available?: boolean };
+type ModelOption = { id: string; label: string };
 
 function cardTone(tone: 'neutral' | 'info' | 'warning' | 'success') {
   if (tone === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
@@ -63,7 +67,10 @@ export default function SquadPage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [rightTab, setRightTab] = useState<'next' | 'activity' | 'controls'>('next');
+  const [selectedProvider, setSelectedProvider] = useState(() => readProviderSelection('claude'));
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
@@ -81,7 +88,56 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider });
+
+  useEffect(() => {
+    writeProviderSelection(selectedProvider);
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProviders() {
+      try {
+        const res = await fetch('/api/providers');
+        if (!res.ok) return;
+        const data = await res.json();
+        const nextProviders = Array.isArray(data?.providers)
+          ? data.providers.map((provider: ProviderOption) => ({
+              id: provider.id,
+              label: provider.label,
+              description: provider.description,
+              available: provider.available,
+            }))
+          : FALLBACK_PROVIDER_OPTIONS;
+        if (!cancelled && nextProviders.length) {
+          setProviderOptions(nextProviders);
+        }
+      } catch {}
+    }
+    loadProviders();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadModels() {
+      try {
+        const res = await fetch(`/api/models?provider=${encodeURIComponent(selectedProvider)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const nextModels: ModelOption[] = Array.isArray(data?.models)
+          ? data.models.map((model: { id: string; label?: string }) => ({ id: model.id, label: model.label || model.id }))
+          : [];
+        if (cancelled) return;
+        setModelOptions(nextModels);
+        const nextDefault = data?.provider?.defaultModel || nextModels[0]?.id || selectedModel;
+        const nextSelected = nextModels.some((model) => model.id === selectedModel) ? selectedModel : nextDefault;
+        setSelectedModel(nextSelected);
+      } catch {}
+    }
+    loadModels();
+    return () => { cancelled = true; };
+  }, [selectedProvider]);
 
   useEffect(() => {
     if (mode !== 'pipeline') return;
@@ -206,22 +262,37 @@ export default function SquadPage() {
                 </div>
               </div>
 
-              {!isPipeline && (
-                <div>
-                  <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Model</div>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                  >
-                    {MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-[#121522]">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div>
+                <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Provider</div>
+                <select
+                  aria-label="Provider"
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                >
+                  {providerOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                      {opt.label}{opt.available === false ? ' (unavailable)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Model</div>
+                <select
+                  aria-label="Model"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                >
+                  {(modelOptions.length ? modelOptions : [{ id: selectedModel, label: selectedModel }]).map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               {isPipeline && (
                 <>

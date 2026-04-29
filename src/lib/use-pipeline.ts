@@ -111,6 +111,7 @@ interface UsePipelineOptions {
   pollInterval?: number;
   mode: AppMode;
   model: string;
+  provider: string;
 }
 
 interface SendChatOptions {
@@ -120,7 +121,7 @@ interface SendChatOptions {
   runFinalAudit?: boolean;
 }
 
-export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelineOptions) {
+export function usePipelineState({ pollInterval = 400, mode, model, provider }: UsePipelineOptions) {
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,6 +156,7 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
         message,
         mode,
         model,
+        provider,
         securityMode: options?.securityMode,
         permissionMode: options?.permissionMode,
         runGoal: options?.runGoal,
@@ -162,7 +164,7 @@ export function usePipelineState({ pollInterval = 400, mode, model }: UsePipelin
       }),
     });
     return res.json();
-  }, [mode, model]);
+  }, [mode, model, provider]);
 
   const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
     const res = await fetch('/api/start-pipeline', {

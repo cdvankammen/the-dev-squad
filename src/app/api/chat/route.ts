@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
+import { spawn as nodeSpawn } from 'child_process';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
@@ -24,6 +25,7 @@ import {
   type SecurityMode,
 } from '@/lib/pipeline-control';
 import { parseSupervisorIntent } from '@/lib/supervisor-intents';
+import { getProviderDefinition } from '@/lib/provider-catalog';
 
 const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 const BUILDS_DIR = join(homedir(), 'Builds');
@@ -332,9 +334,156 @@ function streamClaude(
   });
 }
 
+function streamOpenCode(
+  opts: { prompt: string; projectDir: string; model: string; sessionId?: string; agent: string },
+  eventsFile: string,
+  agent: string,
+  sessionId: string,
+): Promise<NextResponse> {
+  return new Promise<NextResponse>((resolveResponse) => {
+    const args = [
+      'run',
+      opts.prompt,
+      '--format', 'json',
+      '--pure',
+      '--model', opts.model,
+      '--dir', opts.projectDir,
+    ];
+    if (opts.sessionId) {
+      args.push('--session', opts.sessionId);
+    }
+
+    const child = nodeSpawn('opencode', args, {
+      cwd: opts.projectDir,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        TERM: 'dumb',
+      },
+    });
+
+    const rl = createInterface({ input: child.stdout });
+    let newSessionId = sessionId;
+    let stderr = '';
+    let diagnosticTail = '';
+
+    function noteDiagnostic(text: string) {
+      if (!text) return;
+      diagnosticTail = `${diagnosticTail}\n${text}`.slice(-12_000);
+    }
+
+    rl.on('line', (line) => {
+      if (!line.trim()) return;
+      noteDiagnostic(line);
+
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return;
+      }
+
+      const part = (event.part as Record<string, unknown> | undefined) || {};
+      const streamedSessionId =
+        (event.sessionID as string) ||
+        (event.sessionId as string) ||
+        (event.session_id as string) ||
+        (part.sessionID as string) ||
+        (part.sessionId as string) ||
+        (part.session_id as string) ||
+        '';
+      if (streamedSessionId) {
+        newSessionId = streamedSessionId;
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          if (!s.sessions) s.sessions = {};
+          s.sessions[agent] = streamedSessionId;
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      }
+
+      const type = String(event.type || part.type || '');
+      const lowerType = type.toLowerCase();
+
+      if (lowerType === 'text') {
+        const text = String(event.text || part.text || '').trim();
+        if (text) {
+          try {
+            const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+            s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'text', text });
+            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          } catch {}
+        }
+      } else if (lowerType.includes('tool')) {
+        const toolName = String((part.name as string) || (event.tool as string) || type || 'tool').trim();
+        const text = toolName ? `Tool event: ${toolName}` : 'Tool event';
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'tool_call', text });
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      } else if (lowerType === 'step_start') {
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'status', text: 'OpenCode started a step.' });
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      } else if (lowerType === 'step_finish') {
+        const tokens = (part.tokens as {
+          input?: number;
+          output?: number;
+          cacheRead?: number;
+          cacheWrite?: number;
+          cache?: { read?: number; write?: number };
+        } | undefined) || {};
+        const cost = Number((part.cost as number) || 0);
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          if (!s.sessions) s.sessions = {};
+          s.sessions[agent] = newSessionId;
+          if (s.usage) {
+            s.usage.inputTokens = (s.usage.inputTokens || 0) + Number(tokens.input || 0);
+            s.usage.outputTokens = (s.usage.outputTokens || 0) + Number(tokens.output || 0);
+            s.usage.cacheReadTokens = (s.usage.cacheReadTokens || 0) + Number(tokens.cacheRead || tokens.cache?.read || 0);
+            s.usage.cacheWriteTokens = (s.usage.cacheWriteTokens || 0) + Number(tokens.cacheWrite || tokens.cache?.write || 0);
+            s.usage.totalCostUsd = (s.usage.totalCostUsd || 0) + cost;
+          }
+          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        } catch {}
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      noteDiagnostic(text);
+    });
+
+    child.on('close', async () => {
+      try {
+        const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+        if (s.agentStatus) s.agentStatus[agent] = 'idle';
+        writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+      } catch {}
+
+      if (stderr.trim()) {
+        noteDiagnostic(stderr);
+      }
+
+      // OpenCode is not our current docker-based engine, so there is no host fallback path.
+      void diagnosticTail;
+      resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
+    });
+
+    child.on('error', () => {
+      resolveResponse(NextResponse.json({ success: false }, { status: 500 }));
+    });
+  });
+}
+
 // ── Manual mode ─────────────────────────────────────────────────────
 
-function handleManual(agent: string, message: string, model: string) {
+function handleManual(agent: string, message: string, model: string, provider: string) {
   const eventsFile = join(MANUAL_DIR, 'manual-state.json');
   const state = getManualState();
   const sessions = (state.sessions as Record<string, string>) || {};
@@ -359,6 +508,26 @@ function handleManual(agent: string, message: string, model: string) {
   writeFileSync(eventsFile, JSON.stringify(state, null, 2));
 
   const safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
+  const resolvedProvider = getProviderDefinition(provider).id;
+
+  if (resolvedProvider === 'opencode') {
+    const prompt = sessionId
+      ? safeMessage
+      : `${MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A}\n\n${safeMessage}`;
+
+    return streamOpenCode(
+      {
+        prompt,
+        projectDir: MANUAL_DIR,
+        model,
+        sessionId: sessionId || undefined,
+        agent,
+      },
+      eventsFile,
+      agent,
+      sessionId
+    );
+  }
 
   return streamClaude(
     {
@@ -638,10 +807,10 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { agent, message, mode, model, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
+  const { agent, message, mode, model, provider, securityMode, permissionMode, runGoal, runFinalAudit } = await req.json();
 
   if (mode === 'manual') {
-    return handleManual(agent, message, model || 'claude-sonnet-4-6');
+    return handleManual(agent, message, model || 'claude-sonnet-4-6', provider || 'claude');
   }
   return handlePipeline(agent, message, {
     securityMode: securityMode === 'strict' ? 'strict' : 'fast',
