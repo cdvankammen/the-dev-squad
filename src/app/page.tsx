@@ -108,8 +108,7 @@ export default function PipelinePage() {
     setProviderHost,
     providerPort,
     setProviderPort,
-    providerBaseUrl,
-    setProviderBaseUrl,
+    providerResolvedUrl,
     providerApiKey,
     setProviderApiKey,
     agentModels,
@@ -120,7 +119,7 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 1500 : 2200, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -167,6 +166,7 @@ export default function PipelinePage() {
       }));
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
+  const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
 
   // Auto-scroll: all panels, expanded modal, and live feed
   useEffect(() => {
@@ -221,16 +221,23 @@ export default function PipelinePage() {
 
   // Poll for pending approvals (pipeline mode only)
   useEffect(() => {
-    if (!isPipeline) return;
+    const shouldPollPending = isPipeline && (
+      state.pipelineStatus === 'running' ||
+      state.pipelineStatus === 'paused' ||
+      state.pipelineStatus === 'awaiting-audit-decision' ||
+      Boolean(pendingApproval)
+    );
+    if (!shouldPollPending) return;
+
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/pending?_=' + Date.now());
+        const res = await fetch('/api/pending?_=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 500);
+    }, 2500);
     return () => clearInterval(interval);
-  }, [isPipeline]);
+  }, [isPipeline, pendingApproval, state.pipelineStatus]);
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
@@ -240,7 +247,7 @@ export default function PipelinePage() {
   const dispatchSupervisorMessage = useCallback(async (message: string) => {
     setSendingAgents(prev => new Set([...prev, 'S']));
     try {
-      await sendChat('S', message, isPipeline ? {
+      return await sendChat('S', message, isPipeline ? {
         securityMode: selectedSecurityMode,
         permissionMode: selectedPermissionMode,
         runGoal: selectedRunGoal,
@@ -259,8 +266,10 @@ export default function PipelinePage() {
       setChatInput('');
       return;
     }
-    setChatInput('');
-    await dispatchSupervisorMessage(message);
+    const response = await dispatchSupervisorMessage(message);
+    if ((response as { success?: boolean } | undefined)?.success !== false) {
+      setChatInput('');
+    }
   }
 
   async function handleSendQueuedSupervisorMessage(itemId: string) {
@@ -268,8 +277,10 @@ export default function PipelinePage() {
     if (!queued || sendingAgents.has('S') || queueDispatching) return;
     setQueueDispatching(true);
     try {
-      await dispatchSupervisorMessage(queued.text);
-      setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
+      const response = await dispatchSupervisorMessage(queued.text);
+      if ((response as { success?: boolean } | undefined)?.success !== false) {
+        setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
+      }
     } finally {
       setQueueDispatching(false);
     }
@@ -301,8 +312,10 @@ export default function PipelinePage() {
 
     setQueueDispatching(true);
     void dispatchSupervisorMessage(queuedText)
-      .then(() => {
-        setSupervisorQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+      .then((response) => {
+        if ((response as { success?: boolean } | undefined)?.success !== false) {
+          setSupervisorQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+        }
       })
       .finally(() => {
         setQueueDispatching(false);
@@ -357,13 +370,15 @@ export default function PipelinePage() {
 
     setSendingAgents(prev => new Set([...prev, id]));
     setSelectedAgent(id);
-    await sendChat(id, msg, isPipeline ? {
+    const response = await sendChat(id, msg, isPipeline ? {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
       runFinalAudit: selectedRunFinalAudit,
     } : undefined);
-    setPanelInputs(prev => ({ ...prev, [id]: '' }));
+    if ((response as { success?: boolean } | undefined)?.success !== false) {
+      setPanelInputs(prev => ({ ...prev, [id]: '' }));
+    }
     setSendingAgents(prev => { const n = new Set(prev); n.delete(id); return n; });
   }
 
@@ -372,13 +387,15 @@ export default function PipelinePage() {
     const msg = chatInput.trim();
 
     setSendingAgents(prev => new Set([...prev, expandedAgent]));
-    await sendChat(expandedAgent, msg, isPipeline ? {
+    const response = await sendChat(expandedAgent, msg, isPipeline ? {
       securityMode: selectedSecurityMode,
       permissionMode: selectedPermissionMode,
       runGoal: selectedRunGoal,
       runFinalAudit: selectedRunFinalAudit,
     } : undefined);
-    setChatInput('');
+    if ((response as { success?: boolean } | undefined)?.success !== false) {
+      setChatInput('');
+    }
     setSendingAgents(prev => { const n = new Set(prev); n.delete(expandedAgent!); return n; });
   }
 
@@ -473,7 +490,7 @@ export default function PipelinePage() {
   return (
     <div className="p-4 space-y-4">
       {/* Hero: Animation + Feed (65%) + Dashboard (35%) */}
-      <div className="grid grid-cols-[65%_1fr] gap-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,65%)_minmax(320px,1fr)]">
         {/* Office Scene + Live Feed below it — height driven by dashboard */}
         <div className="flex h-0 min-h-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]">
           <div className="p-2">
@@ -556,12 +573,14 @@ export default function PipelinePage() {
                   className={`${toggleButtonClass(!isPipeline, 'bg-blue-600')} rounded-r-md`}
                 >Manual</button>
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            </div>
+            <div className="mt-2 space-y-2">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <select
                   title="Provider"
                   value={selectedProvider}
                   onChange={(e) => setSelectedProvider(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300 focus:border-blue-600 focus:outline-none"
                 >
                   {providerOptions.map((opt) => (
                     <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
@@ -571,66 +590,61 @@ export default function PipelinePage() {
                   title="Model"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300 focus:border-blue-600 focus:outline-none"
                 >
                   {modelOptions.map((opt) => (
                     <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => void refreshModels(selectedProvider)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  Refresh Models
+                </button>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Workspace root (optional)</label>
                 <input
                   title="Working directory"
                   value={selectedWorkingDir}
                   onChange={(e) => setSelectedWorkingDir(e.target.value)}
-                  placeholder="~/Builds/project-root"
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  placeholder="/Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                 />
+                <p className="text-[10px] text-slate-500">Optional. Leave blank to use the app default workspace.</p>
               </div>
               {showHttpSettings && (
-                <div className="mt-2 grid gap-2 sm:grid-cols-4">
-                  <input
-                    title="Host"
-                    value={providerHost}
-                    onChange={(e) => setProviderHost(e.target.value)}
-                    placeholder="127.0.0.1"
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="Port"
-                    value={providerPort}
-                    onChange={(e) => setProviderPort(e.target.value)}
-                    placeholder="1234"
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="Base URL"
-                    value={providerBaseUrl}
-                    onChange={(e) => setProviderBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:1234"
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="API Key"
-                    value={providerApiKey}
-                    onChange={(e) => setProviderApiKey(e.target.value)}
-                    placeholder="optional"
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
-                  />
+                <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <input
+                      title="Host or IP address"
+                      value={providerHost}
+                      onChange={(e) => setProviderHost(e.target.value)}
+                      placeholder="10.2.0.90"
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                    />
+                    <input
+                      title="Port"
+                      value={providerPort}
+                      onChange={(e) => setProviderPort(e.target.value)}
+                      placeholder="1234"
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500">Full URL in use: <span className="font-mono text-slate-400">{providerResolvedUrl || 'http://host:port'}</span></p>
+                  {showApiKeyInput && (
+                    <input
+                      title="API Key"
+                      value={providerApiKey}
+                      onChange={(e) => setProviderApiKey(e.target.value)}
+                      placeholder={selectedProvider === 'openwebui' ? 'Open WebUI API key' : 'API key'}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                    />
+                  )}
                 </div>
               )}
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void refreshModels(selectedProvider)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                >
-                  Refresh Models
-                </button>
-                <span className="text-[10px] text-slate-500">
-                  {selectedProviderDefinition?.mode === 'openai-compat-http'
-                    ? 'Connection settings are saved for this provider and used for dynamic model discovery.'
-                    : 'CLI-style providers use the local runtime and their discovered models are loaded automatically.'}
-                </span>
-              </div>
             </div>
             <div className={`mt-3 rounded-xl border px-3 py-3 ${
               modePosture.tone === 'warning'
@@ -998,10 +1012,10 @@ export default function PipelinePage() {
           When the security audit starts, E is added on the right (same size as S)
           and the center columns squish to accommodate. */}
       <div
-        className={`grid h-screen grid-rows-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] ${auditHasStarted ? 'lg:[grid-template-columns:25%_1fr_1fr_25%]' : 'lg:[grid-template-columns:30%_1fr_1fr]'}`}
+        className={`grid min-h-[72vh] grid-cols-1 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] xl:grid-rows-2 ${auditHasStarted ? 'xl:[grid-template-columns:25%_1fr_1fr_25%]' : 'xl:[grid-template-columns:30%_1fr_1fr]'}`}
       >
         {/* S — Supervisor, spans both rows */}
-          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18] row-span-2" onClick={() => setSelectedAgent('S')}>
+          <div className="flex min-h-[28rem] cursor-pointer flex-col overflow-hidden bg-[#0c0c18] xl:row-span-2 xl:min-h-0" onClick={() => setSelectedAgent('S')}>
             <div className="flex items-center gap-3 border-b-2 border-emerald-600 px-3.5 py-2.5">
             <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] border-2 text-sm font-bold transition-all ${
               (state.agentStatus.S === 'active' || state.agentStatus.S === 'working')
@@ -1139,7 +1153,7 @@ export default function PipelinePage() {
             <div
               key={id}
               onClick={() => { setSelectedAgent(id); setExpandedAgent(id); }}
-              className={`flex cursor-pointer flex-col overflow-hidden transition-colors ${
+              className={`flex min-h-[24rem] cursor-pointer flex-col overflow-hidden transition-colors xl:min-h-0 ${
                 isSelected ? 'bg-[#0c0c18]' : 'bg-[#08080d] hover:bg-[#0a0a12]'
               }`}
             >

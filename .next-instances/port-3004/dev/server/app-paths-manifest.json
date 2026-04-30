@@ -1,1 +1,6 @@
-{}
+{
+  "/api/models/route": "app/api/models/route.js",
+  "/api/provider-config/route": "app/api/provider-config/route.js",
+  "/page": "app/page.js",
+  "/squad/page": "app/squad/page.js"
+}

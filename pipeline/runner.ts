@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { getBaseUrlForProvider } from '../src/lib/providerConfig.ts';
+import { getBaseUrlForProvider, getProviderConfigRoot } from '../src/lib/providerConfig.ts';
 
 export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
@@ -221,7 +221,7 @@ function permissionArgs(): string[] {
 }
 
 function httpShimPath(): string {
-  return resolve(import.meta.dirname || __dirname, '..', 'scripts', 'http-runner-shim.mjs');
+  return resolve(getProviderConfigRoot(), 'scripts', 'http-runner-shim.mjs');
 }
 
 function buildOpenCodeArgs(opts: RunnerOptions): string[] {

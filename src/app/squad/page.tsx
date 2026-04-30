@@ -114,8 +114,7 @@ export default function SquadPage() {
     setProviderHost,
     providerPort,
     setProviderPort,
-    providerBaseUrl,
-    setProviderBaseUrl,
+    providerResolvedUrl,
     providerApiKey,
     setProviderApiKey,
     agentModels,
@@ -133,19 +132,25 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 1500 : 2200, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   useEffect(() => {
-    if (mode !== 'pipeline') return;
+    const shouldPollPending = mode === 'pipeline' && (
+      state.pipelineStatus === 'running' ||
+      state.pipelineStatus === 'paused' ||
+      state.pipelineStatus === 'awaiting-audit-decision' ||
+      Boolean(pendingApproval)
+    );
+    if (!shouldPollPending) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/pending?_=' + Date.now());
+        const res = await fetch('/api/pending?_=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 500);
+    }, 2500);
     return () => clearInterval(interval);
-  }, [mode]);
+  }, [mode, pendingApproval, state.pipelineStatus]);
 
   const isPipeline = mode === 'pipeline';
   const pipelineRunning = isPipeline && state.pipelineStatus === 'running';
@@ -180,6 +185,7 @@ export default function SquadPage() {
       }));
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
+  const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
 
   const visiblePendingApproval = isPipeline ? pendingApproval : null;
   const supervisorRecommendation = isPipeline ? getSupervisorRecommendation(state, visiblePendingApproval) : null;
@@ -206,7 +212,7 @@ export default function SquadPage() {
   const dispatchDirectMessage = useCallback(async (agent: AgentId, message: string) => {
     setSendingAgents((prev) => new Set(prev).add(agent));
     try {
-      await sendChat(agent, message, isPipeline ? {
+      return await sendChat(agent, message, isPipeline ? {
         securityMode: selectedSecurityMode,
         runGoal: selectedRunGoal,
         runFinalAudit: selectedRunFinalAudit,
@@ -231,8 +237,10 @@ export default function SquadPage() {
       setChatInput('');
       return;
     }
-    setChatInput('');
-    await dispatchDirectMessage(selectedAgent, message);
+    const response = await dispatchDirectMessage(selectedAgent, message);
+    if ((response as { success?: boolean } | undefined)?.success !== false) {
+      setChatInput('');
+    }
   }
 
   async function sendQueuedMessage(agent: AgentId, itemId: string) {
@@ -240,11 +248,13 @@ export default function SquadPage() {
     if (!queued || sendingAgents.has(agent) || queueDispatching[agent]) return;
     setQueueDispatching((prev) => ({ ...prev, [agent]: true }));
     try {
-      await dispatchDirectMessage(agent, queued.text);
-      setQueuedMessages((prev) => ({
-        ...prev,
-        [agent]: prev[agent].filter((item) => item.id !== itemId),
-      }));
+      const response = await dispatchDirectMessage(agent, queued.text);
+      if ((response as { success?: boolean } | undefined)?.success !== false) {
+        setQueuedMessages((prev) => ({
+          ...prev,
+          [agent]: prev[agent].filter((item) => item.id !== itemId),
+        }));
+      }
     } finally {
       setQueueDispatching((prev) => ({ ...prev, [agent]: false }));
     }
@@ -293,11 +303,13 @@ export default function SquadPage() {
 
     setQueueDispatching((prev) => ({ ...prev, [nextAgent]: true }));
     void dispatchDirectMessage(nextAgent, queuedText)
-      .then(() => {
-        setQueuedMessages((prev) => ({
-          ...prev,
-          [nextAgent]: prev[nextAgent].filter((item) => item.id !== nextQueued.id),
-        }));
+      .then((response) => {
+        if ((response as { success?: boolean } | undefined)?.success !== false) {
+          setQueuedMessages((prev) => ({
+            ...prev,
+            [nextAgent]: prev[nextAgent].filter((item) => item.id !== nextQueued.id),
+          }));
+        }
       })
       .finally(() => {
         setQueueDispatching((prev) => ({ ...prev, [nextAgent]: false }));
@@ -342,8 +354,8 @@ export default function SquadPage() {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)_250px]">
-          <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))] p-3">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
+          <aside className="flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))] p-3 xl:min-h-0">
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               <div>
                 <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Mode</div>
@@ -363,82 +375,80 @@ export default function SquadPage() {
                 </div>
               </div>
 
-              <div className="grid gap-2">
-                <select
-                  title="Provider"
-                  value={selectedProvider}
-                  onChange={(e) => setSelectedProvider(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                >
-                  {providerOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id} className="bg-[#121522]">
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  title="Model"
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                >
-                  {modelOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id} className="bg-[#121522]">
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  title="Working directory"
-                  value={selectedWorkingDir}
-                  onChange={(e) => setSelectedWorkingDir(e.target.value)}
-                  placeholder="~/Builds/project-root"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-              {showHttpSettings && (
-                <div className="grid gap-2">
+              <div className="space-y-2">
+                <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <select
+                    title="Provider"
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                  >
+                    {providerOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    title="Model"
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                  >
+                    {modelOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void refreshModels(selectedProvider)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                  >
+                    Refresh Models
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Workspace root (optional)</label>
                   <input
-                    title="Host"
-                    value={providerHost}
-                    onChange={(e) => setProviderHost(e.target.value)}
-                    placeholder="127.0.0.1"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="Port"
-                    value={providerPort}
-                    onChange={(e) => setProviderPort(e.target.value)}
-                    placeholder="1234"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="Base URL"
-                    value={providerBaseUrl}
-                    onChange={(e) => setProviderBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:1234"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
-                  />
-                  <input
-                    title="API Key"
-                    value={providerApiKey}
-                    onChange={(e) => setProviderApiKey(e.target.value)}
-                    placeholder="optional"
+                    title="Working directory"
+                    value={selectedWorkingDir}
+                    onChange={(e) => setSelectedWorkingDir(e.target.value)}
+                    placeholder="/Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
                   />
                 </div>
-              )}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void refreshModels(selectedProvider)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                >
-                  Refresh Models
-                </button>
-                <span className="text-[10px] text-slate-500">
-                  {showHttpSettings ? 'Connection settings are saved for this provider.' : 'CLI providers discover models automatically.'}
-                </span>
+                {showHttpSettings && (
+                  <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input
+                        title="Host or IP address"
+                        value={providerHost}
+                        onChange={(e) => setProviderHost(e.target.value)}
+                        placeholder="10.2.0.90"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                      />
+                      <input
+                        title="Port"
+                        value={providerPort}
+                        onChange={(e) => setProviderPort(e.target.value)}
+                        placeholder="1234"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500">Full URL in use: <span className="font-mono text-slate-400">{providerResolvedUrl || 'http://host:port'}</span></p>
+                    {showApiKeyInput && (
+                      <input
+                        title="API Key"
+                        value={providerApiKey}
+                        onChange={(e) => setProviderApiKey(e.target.value)}
+                        placeholder={selectedProvider === 'openwebui' ? 'Open WebUI API key' : 'API key'}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
 
               {isPipeline && (
@@ -526,7 +536,12 @@ export default function SquadPage() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-sm font-semibold text-white">{AGENT_NAMES[agent]}</div>
+                            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                              <span>{AGENT_NAMES[agent]}</span>
+                              {queuedMessages[agent].length > 0 && (
+                                <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-200">{queuedMessages[agent].length}</span>
+                              )}
+                            </div>
                             <div className="mt-0.5 text-[11px] leading-relaxed text-slate-400">{AGENT_DESCRIPTIONS[agent]}</div>
                           </div>
                           <Badge variant={(state.agentStatus[agent] === 'active' || state.agentStatus[agent] === 'working') ? 'success' : 'neutral'}>

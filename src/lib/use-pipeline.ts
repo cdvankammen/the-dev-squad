@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { PipelineRuntimeState } from '@/lib/pipeline-runtime';
 
 export type AgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
@@ -68,6 +68,9 @@ export interface PipelineState {
   auditFindings?: AuditFinding[];
   auditDeployPending?: boolean;
   auditActionInFlight?: boolean;
+  selectedModel?: string;
+  selectedProvider?: string;
+  requestedWorkingDir?: string;
 }
 
 export interface PendingApproval {
@@ -123,6 +126,32 @@ interface SendChatOptions {
   runFinalAudit?: boolean;
 }
 
+function shouldUpdatePipelineState(prev: PipelineState, next: PipelineState): boolean {
+  const prevLastEvent = prev.events[prev.events.length - 1];
+  const nextLastEvent = next.events[next.events.length - 1];
+  const prevTurn = prev.runtime?.activeTurn;
+  const nextTurn = next.runtime?.activeTurn;
+
+  return !(
+    prev.projectDir === next.projectDir &&
+    prev.currentPhase === next.currentPhase &&
+    prev.pipelineStatus === next.pipelineStatus &&
+    prev.activeAgent === next.activeAgent &&
+    prev.buildComplete === next.buildComplete &&
+    prev.stopAfterPhase === next.stopAfterPhase &&
+    prev.selectedModel === next.selectedModel &&
+    prev.selectedProvider === next.selectedProvider &&
+    prev.requestedWorkingDir === next.requestedWorkingDir &&
+    prev.events.length === next.events.length &&
+    prevLastEvent?.time === nextLastEvent?.time &&
+    prevLastEvent?.type === nextLastEvent?.type &&
+    prevLastEvent?.text === nextLastEvent?.text &&
+    prevTurn?.status === nextTurn?.status &&
+    prevTurn?.lastEventAt === nextTurn?.lastEventAt &&
+    prevTurn?.sessionId === nextTurn?.sessionId
+  );
+}
+
 async function readJsonResponse<T extends Record<string, unknown> = Record<string, unknown>>(res: Response, fallback: T, context: string): Promise<T> {
   const text = await res.text();
   const trimmed = text.trim();
@@ -156,24 +185,46 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
 
   useEffect(() => {
     let active = true;
+    let timer: number | null = null;
+    let controller: AbortController | null = null;
 
     async function poll() {
       try {
-        const res = await fetch(`/api/state?mode=${mode}&_=${Date.now()}`);
+        controller?.abort();
+        controller = new AbortController();
+        const res = await fetch(`/api/state?mode=${mode}&_=${Date.now()}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
         if (!res.ok) return;
         const data = await res.json();
         if (active) {
-          setState(data);
+          setState((prev) => (shouldUpdatePipelineState(prev, data) ? data : prev));
           setError(null);
         }
       } catch (err) {
-        if (active) setError(String(err));
+        if (active && !(err instanceof DOMException && err.name === 'AbortError')) {
+          setError(String(err));
+        }
+      } finally {
+        if (active) {
+          const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+          const nextDelay = hidden ? Math.max(pollInterval * 4, 5000) : pollInterval;
+          timer = window.setTimeout(() => {
+            void poll();
+          }, nextDelay);
+        }
       }
     }
 
-    poll();
-    const interval = setInterval(poll, pollInterval);
-    return () => { active = false; clearInterval(interval); };
+    void poll();
+    return () => {
+      active = false;
+      controller?.abort();
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
   }, [pollInterval, mode]);
 
   const sendChat = useCallback(async (agent: AgentId, message: string, options?: SendChatOptions) => {
@@ -301,17 +352,27 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
   }, [mode]);
 
   // Get events for a specific agent
-  const agentEvents = useCallback((agent: AgentId) => {
-    return state.events.filter(e => e.agent === agent);
+  const eventsByAgent = useMemo(() => {
+    const grouped: Partial<Record<AgentId, PipelineEvent[]>> = { A: [], B: [], C: [], D: [], E: [], S: [] };
+    for (const event of state.events) {
+      if (event.agent in grouped) {
+        grouped[event.agent as AgentId]!.push(event);
+      }
+    }
+    return grouped;
   }, [state.events]);
+
+  const agentEvents = useCallback((agent: AgentId) => {
+    return eventsByAgent[agent] || [];
+  }, [eventsByAgent]);
 
   // Get latest speech for an agent (for bubble display)
   const agentSpeech = useCallback((agent: AgentId): string | null => {
-    const events = state.events.filter(e => e.agent === agent && (e.type === 'text' || e.type === 'status' || e.type === 'tool_call'));
+    const events = (eventsByAgent[agent] || []).filter((e: PipelineEvent) => e.type === 'text' || e.type === 'status' || e.type === 'tool_call');
     if (events.length === 0) return null;
     const last = events[events.length - 1];
     return last.text.length > 80 ? last.text.slice(0, 77) + '...' : last.text;
-  }, [state.events]);
+  }, [eventsByAgent]);
 
   return {
     state,

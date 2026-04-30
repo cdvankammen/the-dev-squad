@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestOrigin } from '@/lib/skill-runtime';
+import { buildInternalAuthHeaders, getRequestOrigin } from '@/lib/skill-runtime';
 
 async function probeJson(url: string) {
   const startedAt = Date.now();
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: buildInternalAuthHeaders(),
+    });
     const elapsedMs = Date.now() - startedAt;
     let data: unknown = null;
     try {
