@@ -23,6 +23,17 @@ export interface SkillAuthResult {
 
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
+function isPrivateIpHost(host: string): boolean {
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  const match = host.match(/^172\.(\d{1,3})\./);
+  if (match) {
+    const second = Number.parseInt(match[1] || '', 10);
+    return Number.isFinite(second) && second >= 16 && second <= 31;
+  }
+  return false;
+}
+
 function extractSkillToken(req: NextRequest): string {
   const auth = String(req.headers.get('authorization') || '').trim();
   if (auth.toLowerCase().startsWith('bearer ')) {
@@ -41,7 +52,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 function isLocalSkillRequest(req: NextRequest): boolean {
   try {
     const host = new URL(req.url).hostname.toLowerCase();
-    return LOCALHOST_HOSTNAMES.has(host);
+    return LOCALHOST_HOSTNAMES.has(host) || host.endsWith('.local') || isPrivateIpHost(host);
   } catch {
     return false;
   }

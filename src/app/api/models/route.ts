@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getProviderDefaultModel, getProviderDefinition, listModels, type ProviderId } from '@/lib/provider-catalog';
+import { describeModelListing, getProviderDefaultModel, getProviderDefinition, type ProviderId } from '@/lib/provider-catalog';
 
 function getProviderIdFromRequest(req: Request): ProviderId {
   const url = new URL(req.url);
@@ -10,12 +10,16 @@ function getProviderIdFromRequest(req: Request): ProviderId {
 export async function GET(req: Request) {
   const providerId = getProviderIdFromRequest(req);
   const provider = getProviderDefinition(providerId);
-  const models = listModels(providerId);
+  const result = describeModelListing(providerId);
+  const normalizedStatus = result.models.length === 0 && result.error ? 'error' : result.status;
 
   return NextResponse.json({
     providerId,
     provider,
     defaultModel: getProviderDefaultModel(providerId),
-    models,
+    models: result.models,
+    status: normalizedStatus,
+    error: result.error,
+    endpoint: result.endpoint,
   });
 }

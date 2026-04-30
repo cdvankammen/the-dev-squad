@@ -43,6 +43,8 @@ export interface UseProviderRuntimeOptions {
   defaultWorkingDir?: string;
 }
 
+export type ProviderStatusKind = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
+
 const AGENT_ORDER: AgentId[] = ['S', 'A', 'B', 'C', 'D', 'E'];
 
 function normalizePort(value: string): number | undefined {
@@ -108,6 +110,8 @@ export function useProviderRuntime({
   const [providerPort, setProviderPortState] = useState('');
   const [providerApiKey, setProviderApiKeyState] = useState('');
   const [agentModels, setAgentModelsState] = useState<Partial<Record<AgentId, string>>>({});
+  const [providerStatusKind, setProviderStatusKind] = useState<ProviderStatusKind>('idle');
+  const [providerStatusMessage, setProviderStatusMessage] = useState('');
   const [hydrated, setHydrated] = useState(false);
   const configSyncKeyRef = useRef('');
   const refreshSyncKeyRef = useRef('');
@@ -140,14 +144,20 @@ export function useProviderRuntime({
   const refreshModels = useCallback(async (providerId?: string) => {
     const resolvedProvider = providerId || selectedProvider;
     if (!resolvedProvider) return;
+    setProviderStatusKind('loading');
+    setProviderStatusMessage('Checking provider and loading models…');
     try {
       const res = await fetch(`/api/models?provider=${encodeURIComponent(resolvedProvider)}&_=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) {
         setModels([]);
+        setProviderStatusKind('error');
+        setProviderStatusMessage(`Model discovery failed (HTTP ${res.status}).`);
         return;
       }
 
       const data = await res.json();
+      const routeStatus = String(data?.status || '').trim();
+      const routeError = String(data?.error || '').trim();
       const nextModels = dedupeModels(
         Array.isArray(data?.models) ? (data.models as ProviderModelSummary[]) : []
       );
@@ -180,8 +190,21 @@ export function useProviderRuntime({
         }
         return normalized;
       });
+
+      if (nextModels.length > 0) {
+        setProviderStatusKind('ok');
+        setProviderStatusMessage(`${nextModels.length} model${nextModels.length === 1 ? '' : 's'} available.`);
+      } else if (routeStatus === 'error' || !!routeError) {
+        setProviderStatusKind('error');
+        setProviderStatusMessage(routeError || 'Could not reach the provider host. Check the host, port, and API key.');
+      } else {
+        setProviderStatusKind('empty');
+        setProviderStatusMessage(routeError || 'Provider responded, but no models were returned.');
+      }
     } catch {
       setModels([]);
+      setProviderStatusKind('error');
+      setProviderStatusMessage('Could not reach the provider host. Check the host, port, and API key.');
     }
   }, [defaultModel, selectedModel, selectedProvider]);
 
@@ -319,6 +342,8 @@ export function useProviderRuntime({
     providerResolvedUrl,
     providerApiKey,
     setProviderApiKey: setProviderApiKeyState,
+    providerStatusKind,
+    providerStatusMessage,
     agentModels,
     setAgentModel,
     refreshProviders,

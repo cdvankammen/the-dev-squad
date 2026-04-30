@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, copyFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { join, resolve, basename } from 'node:path';
+import { join, resolve, basename, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import {
@@ -136,6 +136,22 @@ const AGENT_EFFORT: Record<string, string> = {
   E: 'max',    // Security Auditor — must catch real vulnerabilities, deep reasoning required
   S: 'high',   // Supervisor — not currently used
 };
+
+const BUILD_METADATA_FILES = new Set([
+  'plan.md',
+  'build-plan.md',
+  'build-plan-template.md',
+  'checklist.md',
+  'checklist-template.md',
+  'pipeline-events.json',
+  'pipeline-approved.json',
+  'pipeline-pending.json',
+  '.DS_Store',
+]);
+
+const BUILD_METADATA_DIR_PREFIXES = ['.git/', '.claude/', '.next/', 'node_modules/'];
+const MAX_CODE_REVIEW_ROUNDS = 8;
+const MAX_TEST_ROUNDS = 8;
 
 const runner = createRunner();
 
@@ -577,6 +593,86 @@ function looksLikePlanningWritePrompt(prompt: string): boolean {
   return prompt.includes('Write the full build plan to') && prompt.includes('plan.md');
 }
 
+function isImplementationArtifact(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalized) return false;
+  if (BUILD_METADATA_DIR_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
+  if (BUILD_METADATA_FILES.has(basename(normalized))) return false;
+  return true;
+}
+
+function listImplementationArtifacts(rootDir: string): string[] {
+  const artifacts: string[] = [];
+
+  function walk(currentDir: string) {
+    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === '.claude' || entry.name === '.next' || entry.name === 'node_modules') {
+        continue;
+      }
+
+      const absPath = join(currentDir, entry.name);
+      const relPath = relative(rootDir, absPath);
+      if (entry.isDirectory()) {
+        walk(absPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (!isImplementationArtifact(relPath)) continue;
+      artifacts.push(relPath);
+    }
+  }
+
+  walk(rootDir);
+  artifacts.sort((a, b) => a.localeCompare(b));
+  return artifacts;
+}
+
+function summarizeImplementationArtifacts(rootDir: string, artifacts: string[]): string {
+  if (artifacts.length === 0) return '(no implementation files found)';
+  return artifacts
+    .slice(0, 16)
+    .map((relPath) => {
+      const absPath = join(rootDir, relPath);
+      try {
+        const size = statSync(absPath).size;
+        return `- ${absPath} (${size} bytes)`;
+      } catch {
+        return `- ${absPath}`;
+      }
+    })
+    .join('\n');
+}
+
+async function ensureImplementationArtifacts(
+  cSession: string,
+  phase: 'coding' | 'code-review' | 'testing',
+  reason: string,
+): Promise<{ cSession: string; artifacts: string[] }> {
+  let artifacts = listImplementationArtifacts(projectDir);
+  if (artifacts.length > 0) return { cSession, artifacts };
+
+  emit('C', phase, 'status', 'No implementation files detected yet; requesting concrete file output...');
+
+  const followup = await claude('C', [
+    `No implementation files currently exist in ${projectDir}.`,
+    reason,
+    'Create or update the actual project files now using the Write/Edit tools.',
+    'Do not just describe the code. Produce the real files inside the project directory.',
+    'When finished, name the files you created or updated.',
+  ].join('\n'), { role: ROLE_C, resume: cSession });
+  cSession = followup.sessionId;
+  saveSession('C', cSession);
+
+  artifacts = listImplementationArtifacts(projectDir);
+  if (artifacts.length > 0) {
+    emit('C', phase, 'status', `Detected ${artifacts.length} implementation file(s) after retry`);
+    return { cSession, artifacts };
+  }
+
+  emit('C', phase, 'failure', 'Did not create any implementation files');
+  throw new Error('Agent C did not create implementation files');
+}
+
 function hasStablePlanDraft(): boolean {
   const planPath = join(projectDir, 'plan.md');
   try {
@@ -587,6 +683,32 @@ function hasStablePlanDraft(): boolean {
   } catch {
     return false;
   }
+}
+
+function detectPlanningMiswrite(events: PipelineState['events']): string | null {
+  const planningEvents = [...events].reverse();
+  for (const event of planningEvents) {
+    if (event.agent !== 'A' || event.phase !== 'planning') continue;
+    if (event.type === 'permission_denied' && String(event.text || '').includes('can only write plan.md')) {
+      return String(event.text || '').trim();
+    }
+    if (event.type === 'tool_call' && String(event.text || '').startsWith('WRITE ') && !String(event.text || '').includes('plan.md')) {
+      return `Planner attempted ${String(event.text || '').trim()} during the planning write step.`;
+    }
+  }
+  return null;
+}
+
+function buildPlanningWriteRecoveryPrompt(projectDir: string, failureReason?: string | null): string {
+  return [
+    'You are still in the planning phase.',
+    failureReason ? `Your last write attempt failed: ${failureReason}` : '',
+    'Do NOT write code files. Do NOT write index.html, style.css, script.js, or any implementation file.',
+    `Write ONLY the plan to ${join(projectDir, 'plan.md')}.`,
+    'Use the Write tool on plan.md in your very next tool action.',
+    'The content must be the build plan, not application code.',
+    'When plan.md exists, say "Draft written" and stop.',
+  ].filter(Boolean).join('\n\n');
 }
 
 async function runClaudeTurn(
@@ -1244,8 +1366,28 @@ async function runPlanningPhase(aSession: string, options?: { resumeStalled?: bo
     saveSession('A', aSession);
 
     if (!existsSync(existingPlanPath)) {
-      emit('A', 'planning', 'failure', 'Did not write plan.md');
-      throw new Error('Agent A did not write plan.md');
+      const recoveryReason = detectPlanningMiswrite(state.events);
+      emit('system', 'planning', 'status', recoveryReason
+        ? 'Planner wrote the wrong kind of file during plan drafting. Re-trying with a stricter write-only instruction.'
+        : 'Planner did not produce plan.md. Re-trying the write step with a stricter prompt.');
+      emitSupervisor(
+        'planning',
+        recoveryReason
+          ? 'The planner drifted into writing implementation output during the plan-writing turn, so I am forcing one strict retry that can only write plan.md.'
+          : 'The planner did not leave a real plan file, so I am forcing one strict retry that can only write plan.md.'
+      );
+
+      const recoveryResult = await claude('A', buildPlanningWriteRecoveryPrompt(projectDir, recoveryReason), {
+        role: ROLE_A,
+        resume: aSession,
+      });
+      aSession = recoveryResult.sessionId;
+      saveSession('A', aSession);
+
+      if (!existsSync(existingPlanPath)) {
+        emit('A', 'planning', 'failure', 'Did not write plan.md');
+        throw new Error('Agent A did not write plan.md');
+      }
     }
 
     step = detectPlanningStep(state.events, { planExists: true });
@@ -1346,6 +1488,7 @@ async function runPlanReviewPhase(
   let nextBResume = options?.resumeStalledAgent === 'B'
     ? (state.runtime.activeTurn?.sessionId || bSession)
     : bSession;
+  let reviewJsonRetryCount = 0;
 
   while (!planApproved) {
     reviewRound += 1;
@@ -1360,6 +1503,24 @@ async function runPlanReviewPhase(
     saveSession('B', bSession);
 
     const signal = bResult.structured || parseSignal(bResult.result);
+
+    if (signal.parseError === true && (!Array.isArray(signal.questions) || signal.questions.length === 0)) {
+      if (reviewJsonRetryCount < 2) {
+        reviewJsonRetryCount += 1;
+        emit('system', 'plan-review', 'status', 'Reviewer response was not valid JSON. Re-prompting B for a strict JSON-only verdict.');
+        nextBPrompt = [
+          'Your previous response was not valid JSON.',
+          `Read the plan at ${join(projectDir, 'plan.md')} yourself if needed.`,
+          'Do not send prose, markdown, or tool requests as plain text.',
+          'Respond with ONLY one JSON object and nothing else.',
+          '{"status":"approved"} or {"status":"questions","questions":["..."]}',
+        ].join('\n');
+        nextBResume = bSession;
+        continue;
+      }
+    } else {
+      reviewJsonRetryCount = 0;
+    }
 
     if (isPositiveSignal(signal)) {
       planApproved = true;
@@ -1779,6 +1940,14 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
   let cSession = cResult.sessionId;
   saveSession('C', cSession);
 
+  const initialArtifacts = await ensureImplementationArtifacts(
+    cSession,
+    'coding',
+    'Your previous turn finished without producing any implementation files from the approved plan.'
+  );
+  cSession = initialArtifacts.cSession;
+  let implementationArtifacts = initialArtifacts.artifacts;
+
   emit('C', 'coding', 'status', 'Finished coding');
 
   setPhase('code-review');
@@ -1791,23 +1960,46 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
   let dSession: string | undefined;
   let codeApproved = false;
   let codeReviewRound = 0;
+  let codeReviewJsonRetryCount = 0;
+  let nextDPrompt: string | null = null;
 
   while (!codeApproved) {
+    if (codeReviewRound >= MAX_CODE_REVIEW_ROUNDS) {
+      throw new Error(`Code review exceeded ${MAX_CODE_REVIEW_ROUNDS} rounds without approval`);
+    }
     codeReviewRound += 1;
 
-    const dPrompt = dSession
+    implementationArtifacts = listImplementationArtifacts(projectDir);
+    if (implementationArtifacts.length === 0) {
+      const ensured = await ensureImplementationArtifacts(
+        cSession,
+        'code-review',
+        'The reviewer cannot proceed because there are still no implementation files to inspect.'
+      );
+      cSession = ensured.cSession;
+      implementationArtifacts = ensured.artifacts;
+    }
+
+    const implementationSummary = summarizeImplementationArtifacts(projectDir, implementationArtifacts);
+
+    const defaultDPrompt = dSession
       ? [
           'C has applied fixes to the code.',
           `Review the code again against the plan at ${join(projectDir, 'plan.md')}`,
+          'Read these implementation files before deciding:',
+          implementationSummary,
           'Respond with ONLY a JSON object: {"status": "approved"} or {"status": "issues", "issues": ["..."]}',
         ].join('\n')
       : [
           `Read the plan at ${join(projectDir, 'plan.md')}`,
           'Read the code that C wrote.',
+          'These are the implementation files that currently exist:',
+          implementationSummary,
           'Check: does the code match the plan? Every item accounted for?',
           '',
           'Respond with ONLY a JSON object: {"status": "approved"} or {"status": "issues", "issues": ["..."]}',
         ].join('\n');
+    const dPrompt = nextDPrompt || defaultDPrompt;
 
     emit('D', 'code-review', 'status', `Code review round ${codeReviewRound}...`);
 
@@ -1820,6 +2012,24 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
     saveSession('D', dSession);
 
     const signal = dResult.structured || parseSignal(dResult.result);
+
+    if (signal.parseError === true && (!Array.isArray(signal.issues) || signal.issues.length === 0)) {
+      if (codeReviewJsonRetryCount < 2) {
+        codeReviewJsonRetryCount += 1;
+        emit('system', 'code-review', 'status', 'Code review response was not valid JSON. Re-prompting D for a strict JSON-only verdict.');
+        nextDPrompt = [
+          'Your previous code review response was not valid JSON.',
+          `Read the plan at ${join(projectDir, 'plan.md')} and the implementation files again if needed.`,
+          'Do not send prose, markdown, or tool requests as plain text.',
+          'Respond with ONLY one JSON object and nothing else.',
+          '{"status":"approved"} or {"status":"issues","issues":["..."]}',
+        ].join('\n');
+        continue;
+      }
+    } else {
+      codeReviewJsonRetryCount = 0;
+      nextDPrompt = null;
+    }
 
     if (isPositiveSignal(signal)) {
       codeApproved = true;
@@ -1853,6 +2063,14 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
       cSession = cReviewFollowup.sessionId;
       saveSession('C', cSession);
 
+      const ensured = await ensureImplementationArtifacts(
+        cSession,
+        'code-review',
+        'Your last fix turn did not leave any implementation files for review.'
+      );
+      cSession = ensured.cSession;
+      implementationArtifacts = ensured.artifacts;
+
       emit('C', 'code-review', 'fix', 'Applied fixes');
       emit('C', 'code-review', 'send', 'Sent fixed code to D');
       setAgent('C', 'idle');
@@ -1865,23 +2083,46 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
 
   let testsPassed = false;
   let testRound = 0;
+  let testJsonRetryCount = 0;
+  let nextTestPrompt: string | null = null;
 
   while (!testsPassed) {
+    if (testRound >= MAX_TEST_ROUNDS) {
+      throw new Error(`Testing exceeded ${MAX_TEST_ROUNDS} rounds without passing`);
+    }
     testRound += 1;
 
-    const testPrompt = testRound === 1
+    implementationArtifacts = listImplementationArtifacts(projectDir);
+    if (implementationArtifacts.length === 0) {
+      const ensured = await ensureImplementationArtifacts(
+        cSession,
+        'testing',
+        'The tester cannot re-run validation because there are still no implementation files present.'
+      );
+      cSession = ensured.cSession;
+      implementationArtifacts = ensured.artifacts;
+    }
+
+    const implementationSummary = summarizeImplementationArtifacts(projectDir, implementationArtifacts);
+
+    const defaultTestPrompt = testRound === 1
       ? [
           'Code review is complete. Now test the code.',
           'Run it. Confirm it actually works — not just that it looks right.',
           `Test all functionality against the plan at ${join(projectDir, 'plan.md')}`,
+          'These are the implementation files that must exist and be tested:',
+          implementationSummary,
           '',
           'Respond with ONLY a JSON object: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
         ].join('\n')
       : [
           'C has applied fixes for the test failures.',
           'Re-test the code.',
+          'These are the implementation files that currently exist:',
+          implementationSummary,
           'Respond with ONLY a JSON object: {"status": "passed"} or {"status": "failed", "failures": ["..."]}',
         ].join('\n');
+    const testPrompt = nextTestPrompt || defaultTestPrompt;
 
     emit('D', 'testing', 'status', `Test round ${testRound}...`);
 
@@ -1894,6 +2135,24 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
     saveSession('D', dSession);
 
     const signal = testResult.structured || parseSignal(testResult.result);
+
+    if (signal.parseError === true && (!Array.isArray(signal.failures) || signal.failures.length === 0)) {
+      if (testJsonRetryCount < 2) {
+        testJsonRetryCount += 1;
+        emit('system', 'testing', 'status', 'Tester response was not valid JSON. Re-prompting D for a strict JSON-only verdict.');
+        nextTestPrompt = [
+          'Your previous testing response was not valid JSON.',
+          `Read the plan at ${join(projectDir, 'plan.md')} and re-check the implementation files if needed.`,
+          'Do not send prose, markdown, or tool requests as plain text.',
+          'Respond with ONLY one JSON object and nothing else.',
+          '{"status":"passed"} or {"status":"failed","failures":["..."]}',
+        ].join('\n');
+        continue;
+      }
+    } else {
+      testJsonRetryCount = 0;
+      nextTestPrompt = null;
+    }
 
     if (isPositiveSignal(signal)) {
       testsPassed = true;
@@ -1927,6 +2186,14 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
       ].join('\n'), { role: ROLE_C, resume: cSession });
       cSession = cTestFollowup.sessionId;
       saveSession('C', cSession);
+
+      const ensured = await ensureImplementationArtifacts(
+        cSession,
+        'testing',
+        'Your last fix turn did not leave implementation files available for re-testing.'
+      );
+      cSession = ensured.cSession;
+      implementationArtifacts = ensured.artifacts;
 
       emit('C', 'testing', 'fix', 'Applied fixes');
       emit('C', 'testing', 'send', 'Sent fixed code to D');

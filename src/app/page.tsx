@@ -112,6 +112,8 @@ export default function PipelinePage() {
     providerResolvedUrl,
     providerApiKey,
     setProviderApiKey,
+    providerStatusKind,
+    providerStatusMessage,
     agentModels,
     setAgentModel,
     refreshModels,
@@ -120,7 +122,7 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 2500 : 4000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 3000 : 6000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -168,6 +170,13 @@ export default function PipelinePage() {
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
   const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
+  const providerSelectTone = providerStatusKind === 'error'
+    ? 'border-red-500/50'
+    : providerStatusKind === 'empty'
+    ? 'border-amber-500/40'
+    : providerStatusKind === 'ok'
+    ? 'border-emerald-500/30'
+    : 'border-white/10';
 
   // Auto-scroll: all panels, expanded modal, and live feed
   useEffect(() => {
@@ -236,7 +245,7 @@ export default function PipelinePage() {
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 5000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [isPipeline, pendingApproval, state.pipelineStatus]);
 
@@ -588,7 +597,7 @@ export default function PipelinePage() {
                   title="Provider"
                   value={selectedProvider}
                   onChange={(e) => setSelectedProvider(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300 focus:border-blue-600 focus:outline-none"
+                  className={`rounded-lg border bg-white/5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300 focus:border-blue-600 focus:outline-none ${providerSelectTone}`}
                 >
                   {providerOptions.map((opt) => (
                     <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
@@ -612,6 +621,11 @@ export default function PipelinePage() {
                   Refresh Models
                 </button>
               </div>
+              {!!providerStatusMessage && (
+                <p className={`text-[10px] ${providerStatusKind === 'error' ? 'text-red-300' : providerStatusKind === 'empty' ? 'text-amber-300' : providerStatusKind === 'ok' ? 'text-emerald-300' : 'text-slate-500'}`}>
+                  {providerStatusMessage}
+                </p>
+              )}
               <div className="space-y-1">
                 <label className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Workspace root (optional)</label>
                 <input

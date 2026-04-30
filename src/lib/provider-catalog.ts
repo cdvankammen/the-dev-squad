@@ -24,6 +24,13 @@ export interface OpenCodeProviderInfo {
   raw: string;
 }
 
+export interface ProviderModelListResult {
+  models: ProviderModel[];
+  status: 'ok' | 'empty' | 'error';
+  error?: string;
+  endpoint?: string;
+}
+
 function normalizeModel(model: ProviderModel): ProviderModel | null {
   const id = String(model.id || '').trim();
   if (!id) return null;
@@ -178,8 +185,11 @@ function mapModelList(providerId: ProviderId, parsed: unknown): ProviderModel[] 
   return [];
 }
 
-function listOpenAiCompatModels(providerId: ProviderId, endpoints: string[]) {
+function listOpenAiCompatModelsDetailed(providerId: ProviderId, endpoints: string[]): ProviderModelListResult {
   const appPort = String(process.env.PORT || '3000');
+  let lastError = '';
+  let sawReachableEmpty = false;
+
   for (const endpoint of endpoints) {
     try {
       try {
@@ -192,12 +202,33 @@ function listOpenAiCompatModels(providerId: ProviderId, endpoints: string[]) {
       }
       const parsed = readJsonFromUrl(endpoint, providerId);
       const mapped = dedupeModels(mapModelList(providerId, parsed));
-      if (mapped.length > 0) return mapped;
-    } catch {
+      if (mapped.length > 0) {
+        return { models: mapped, status: 'ok', endpoint };
+      }
+      sawReachableEmpty = true;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
       // try next endpoint
     }
   }
-  return [];
+
+  if (sawReachableEmpty) {
+    return {
+      models: [],
+      status: 'empty',
+      error: lastError || undefined,
+    };
+  }
+
+  return {
+    models: [],
+    status: 'error',
+    error: lastError || 'Could not reach any model discovery endpoint.',
+  };
+}
+
+function listOpenAiCompatModels(providerId: ProviderId, endpoints: string[]) {
+  return listOpenAiCompatModelsDetailed(providerId, endpoints).models;
 }
 
 export function getProviderDefinition(providerId?: string): ProviderDefinition {
@@ -213,44 +244,61 @@ export function listProviders(): ProviderDefinition[] {
 }
 
 export function listModels(providerId?: string): ProviderModel[] {
+  return describeModelListing(providerId).models;
+}
+
+export function describeModelListing(providerId?: string): ProviderModelListResult {
   const resolved = getProviderDefinition(providerId);
   if (resolved.id === 'claude') {
-    return dedupeModels([...CLAUDE_MODELS]);
+    return { models: dedupeModels([...CLAUDE_MODELS]), status: 'ok' };
   }
 
   if (resolved.id === 'lm-studio') {
     const base = getBaseUrlForProvider('lm-studio').replace(/\/$/, '');
-    return listOpenAiCompatModels('lm-studio', [`${base}/api/v1/models`, `${base}/v1/models`]);
+    return listOpenAiCompatModelsDetailed('lm-studio', [`${base}/api/v1/models`, `${base}/v1/models`]);
   }
 
   if (resolved.id === 'ollama') {
     const base = getBaseUrlForProvider('ollama').replace(/\/$/, '');
-    const tags = listOpenAiCompatModels('ollama', [`${base}/api/tags`]);
-    if (tags.length > 0) return tags;
-    return listOpenAiCompatModels('ollama', [`${base}/v1/models`]);
+    const tags = listOpenAiCompatModelsDetailed('ollama', [`${base}/api/tags`]);
+    if (tags.models.length > 0 || tags.status === 'ok') return tags;
+    const compat = listOpenAiCompatModelsDetailed('ollama', [`${base}/v1/models`]);
+    if (compat.models.length > 0 || compat.status === 'ok') return compat;
+    if (tags.status === 'empty' || compat.status === 'empty') {
+      return { models: [], status: 'empty', error: compat.error || tags.error };
+    }
+    return { models: [], status: 'error', error: compat.error || tags.error };
   }
 
   if (resolved.id === 'openwebui') {
     const base = getBaseUrlForProvider('openwebui').replace(/\/$/, '');
-    return listOpenAiCompatModels('openwebui', [`${base}/api/models`, `${base}/v1/models`]);
+    return listOpenAiCompatModelsDetailed('openwebui', [
+      `${base}/api/models`,
+      `${base}/api/v1/models`,
+      `${base}/v1/models`,
+      `${base}/ollama/api/tags`,
+    ]);
   }
 
   if (resolved.id === 'openai-compat' || resolved.id === 'claude-code-router' || resolved.id === 'openclaude-code') {
     const base = getBaseUrlForProvider(resolved.id).replace(/\/$/, '');
-    return listOpenAiCompatModels(resolved.id, [`${base}/v1/models`, `${base}/api/models`]);
+    return listOpenAiCompatModelsDetailed(resolved.id, [`${base}/v1/models`, `${base}/api/models`]);
   }
 
   const output = runCommand('opencode', ['models']);
-  return dedupeModels(output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((id) => ({
-      id,
-      label: id,
-      providerId: 'opencode' as const,
-      source: 'opencode' as const,
-    })));
+  return {
+    models: dedupeModels(output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((id) => ({
+        id,
+        label: id,
+        providerId: 'opencode' as const,
+        source: 'opencode' as const,
+      }))),
+    status: 'ok',
+  };
 }
 
 export function inspectOpenCodeProviders(): OpenCodeProviderInfo {

@@ -117,6 +117,8 @@ export default function SquadPage() {
     providerResolvedUrl,
     providerApiKey,
     setProviderApiKey,
+    providerStatusKind,
+    providerStatusMessage,
     agentModels,
     setAgentModel,
     refreshModels,
@@ -132,7 +134,7 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 2500 : 4000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 3000 : 6000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   useEffect(() => {
     const shouldPollPending = mode === 'pipeline' && (
@@ -148,7 +150,7 @@ export default function SquadPage() {
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 5000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [mode, pendingApproval, state.pipelineStatus]);
 
@@ -186,6 +188,13 @@ export default function SquadPage() {
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
   const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
+  const providerSelectTone = providerStatusKind === 'error'
+    ? 'border-red-500/50'
+    : providerStatusKind === 'empty'
+    ? 'border-amber-500/40'
+    : providerStatusKind === 'ok'
+    ? 'border-emerald-500/30'
+    : 'border-white/10';
 
   const visiblePendingApproval = isPipeline ? pendingApproval : null;
   const supervisorRecommendation = isPipeline ? getSupervisorRecommendation(state, visiblePendingApproval) : null;
@@ -382,7 +391,7 @@ export default function SquadPage() {
                       title="Provider"
                       value={selectedProvider}
                       onChange={(e) => setSelectedProvider(e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                      className={`w-full rounded-lg border bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none ${providerSelectTone}`}
                     >
                       {providerOptions.map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-[#121522]">
@@ -411,6 +420,11 @@ export default function SquadPage() {
                     Refresh Models
                   </button>
                 </div>
+                {!!providerStatusMessage && (
+                  <p className={`text-[10px] ${providerStatusKind === 'error' ? 'text-red-300' : providerStatusKind === 'empty' ? 'text-amber-300' : providerStatusKind === 'ok' ? 'text-emerald-300' : 'text-slate-500'}`}>
+                    {providerStatusMessage}
+                  </p>
+                )}
                 <div className="space-y-1">
                   <label className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Workspace root (optional)</label>
                   <input

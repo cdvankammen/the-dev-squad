@@ -183,6 +183,22 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshState = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/state?mode=${mode}&_=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      setState((prev) => (shouldUpdatePipelineState(prev, data) ? data : prev));
+      setError(null);
+      return data as PipelineState;
+    } catch (err) {
+      setError(String(err));
+      return null;
+    }
+  }, [mode]);
+
   useEffect(() => {
     let active = true;
     let timer: number | null = null;
@@ -245,8 +261,12 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
         runFinalAudit: options?.runFinalAudit,
       }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Chat request');
-  }, [mode, model, provider, workingDir, agentModels]);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Chat request');
+    if ((data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [mode, model, provider, workingDir, agentModels, refreshState]);
 
   const startPipeline = useCallback(async (securityMode: SecurityMode, runGoal: RunGoal, permissionMode?: PermissionMode, runFinalAudit?: boolean) => {
     const res = await fetch('/api/start-pipeline', {
@@ -263,16 +283,24 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
         agentModels,
       }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Start pipeline');
-  }, [agentModels, model, provider, workingDir]);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Start pipeline');
+    if ((data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [agentModels, model, provider, workingDir, refreshState]);
 
   const resumePipeline = useCallback(async () => {
     const res = await fetch('/api/resume-pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Resume pipeline');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Resume pipeline');
+    if ((data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const sendFindingToC = useCallback(async (findingId: string) => {
     const res = await fetch('/api/audit-action', {
@@ -280,8 +308,12 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'send-to-c', findingId }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Send audit finding to C');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Send audit finding to C');
+    if ((data?.ok as boolean | undefined) !== false && (data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const dismissFinding = useCallback(async (findingId: string) => {
     const res = await fetch('/api/audit-action', {
@@ -289,8 +321,12 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'dismiss', findingId }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Dismiss audit finding');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Dismiss audit finding');
+    if ((data?.ok as boolean | undefined) !== false && (data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const deployAfterAudit = useCallback(async () => {
     const res = await fetch('/api/audit-action', {
@@ -298,8 +334,12 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'deploy' }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Deploy after audit');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Deploy after audit');
+    if ((data?.ok as boolean | undefined) !== false && (data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const setStopAfterReview = useCallback(async (enabled: boolean) => {
     const res = await fetch('/api/pipeline-control', {
@@ -309,13 +349,21 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
         action: enabled ? 'stop-after-review' : 'clear-stop-after-review',
       }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Set stop-after-review');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Set stop-after-review');
+    if ((data?.ok as boolean | undefined) !== false && (data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const stopPipeline = useCallback(async () => {
     const res = await fetch('/api/stop-pipeline', { method: 'POST' });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Stop pipeline');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Stop pipeline');
+    if ((data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const approveBash = useCallback(async (approved: boolean, pending?: PendingApproval | null) => {
     const res = await fetch('/api/approve', {
@@ -327,8 +375,12 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
         projectDir: pending?.projectDir,
       }),
     });
-    return readJsonResponse<Record<string, unknown>>(res, {}, 'Approve Bash request');
-  }, []);
+    const data = await readJsonResponse<Record<string, unknown>>(res, {}, 'Approve Bash request');
+    if ((data?.success as boolean | undefined) !== false) {
+      void refreshState();
+    }
+    return data;
+  }, [refreshState]);
 
   const getPlan = useCallback(async () => {
     const res = await fetch('/api/plan');
@@ -390,5 +442,6 @@ export function usePipelineState({ pollInterval = 400, mode, model, provider, wo
     sendFindingToC,
     dismissFinding,
     deployAfterAudit,
+    refreshState,
   };
 }
