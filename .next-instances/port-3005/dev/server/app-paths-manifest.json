@@ -1,6 +1,4 @@
 {
-  "/api/state/route": "app/api/state/route.js",
-  "/api/pending/route": "app/api/pending/route.js",
   "/squad/page": "app/squad/page.js",
   "/page": "app/page.js"
 }

@@ -53,9 +53,17 @@ export function authorizeSkillRequest(req: NextRequest): SkillAuthResult {
 
 export function authorizeLocalOrTokenRequest(req: NextRequest, surfaceLabel = 'endpoint'): SkillAuthResult {
   const expected = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
+  const allowUnauthLocal = String(process.env.DEV_SQUAD_ALLOW_UNAUTH_LOCAL || '').trim() === '1';
+
+  if (allowUnauthLocal && isLocalSkillRequest(req)) {
+    return { ok: true };
+  }
+
   if (!expected) {
-    const allowUnauthLocal = String(process.env.DEV_SQUAD_ALLOW_UNAUTH_LOCAL || '').trim() === '1';
-    if (!(allowUnauthLocal && isLocalSkillRequest(req))) {
+    if (isLocalSkillRequest(req)) {
+      return { ok: true };
+    }
+    if (!allowUnauthLocal) {
       return {
         ok: false,
         message: `Unauthorized: set DEV_SQUAD_API_TOKEN (recommended) or DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1 for localhost-only ${surfaceLabel} development`,
@@ -75,7 +83,7 @@ export function authorizeLocalOrTokenRequest(req: NextRequest, surfaceLabel = 'e
   };
 }
 
-function buildInternalAuthHeaders(): Record<string, string> {
+export function buildInternalAuthHeaders(): Record<string, string> {
   const token = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
   if (!token) return {};
   return {

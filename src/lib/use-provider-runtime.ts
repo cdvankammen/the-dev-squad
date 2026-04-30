@@ -1,6 +1,4 @@
-'use client';
-
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentId } from '@/lib/use-pipeline';
 import {
   readAgentModelOverrides,
@@ -60,6 +58,42 @@ function providerModeFallback(providerId: string): ProviderMode {
   return 'openai-compat-http';
 }
 
+function parseBaseUrlParts(baseUrl?: string | null): { host: string; port: string } {
+  const trimmed = String(baseUrl || '').trim();
+  if (!trimmed) return { host: '', port: '' };
+  try {
+    const url = new URL(trimmed);
+    return {
+      host: url.hostname || '',
+      port: url.port || (url.protocol === 'https:' ? '443' : '80'),
+    };
+  } catch {
+    return { host: '', port: '' };
+  }
+}
+
+function buildResolvedUrl(host: string, port: string, fallback?: string | null): string {
+  const parsedFallback = parseBaseUrlParts(fallback);
+  const resolvedHost = String(host || '').trim() || parsedFallback.host;
+  const resolvedPort = String(port || '').trim() || parsedFallback.port;
+  if (!resolvedHost) return String(fallback || '').trim();
+  const numericPort = normalizePort(resolvedPort);
+  const scheme = numericPort === 443 ? 'https' : 'http';
+  return `${scheme}://${resolvedHost}${resolvedPort ? `:${resolvedPort}` : ''}`;
+}
+
+function dedupeModels(input: ProviderModelSummary[]): ProviderModelSummary[] {
+  const seen = new Set<string>();
+  const output: ProviderModelSummary[] = [];
+  for (const item of input) {
+    const id = String(item?.id || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    output.push(item);
+  }
+  return output;
+}
+
 export function useProviderRuntime({
   defaultProvider = 'claude',
   defaultModel = '',
@@ -72,10 +106,11 @@ export function useProviderRuntime({
   const [selectedWorkingDir, setSelectedWorkingDirState] = useState(defaultWorkingDir);
   const [providerHost, setProviderHostState] = useState('');
   const [providerPort, setProviderPortState] = useState('');
-  const [providerBaseUrl, setProviderBaseUrlState] = useState('');
   const [providerApiKey, setProviderApiKeyState] = useState('');
   const [agentModels, setAgentModelsState] = useState<Partial<Record<AgentId, string>>>({});
   const [hydrated, setHydrated] = useState(false);
+  const configSyncKeyRef = useRef('');
+  const refreshSyncKeyRef = useRef('');
 
   const selectedProviderDefinition = useMemo(
     () => providers.find((provider) => provider.id === selectedProvider) || null,
@@ -84,10 +119,14 @@ export function useProviderRuntime({
 
   const providerMode = selectedProviderDefinition?.mode || providerModeFallback(selectedProvider);
   const availableModels = models.length > 0 ? models : [];
+  const providerResolvedUrl = useMemo(
+    () => buildResolvedUrl(providerHost, providerPort, selectedProviderDefinition?.config?.baseUrl || ''),
+    [providerHost, providerPort, selectedProviderDefinition]
+  );
 
   const refreshProviders = useCallback(async () => {
     try {
-      const res = await fetch('/api/providers');
+      const res = await fetch(`/api/providers?_=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data?.providers)) {
@@ -102,17 +141,18 @@ export function useProviderRuntime({
     const resolvedProvider = providerId || selectedProvider;
     if (!resolvedProvider) return;
     try {
-      const res = await fetch(`/api/models?provider=${encodeURIComponent(resolvedProvider)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const nextModels = Array.isArray(data?.models) ? (data.models as ProviderModelSummary[]) : [];
-      const modelIds = new Set(nextModels.map((model) => String(model.id || '').trim()).filter(Boolean));
-
-      if (Array.isArray(data?.models)) {
-        setModels(nextModels);
-      } else {
+      const res = await fetch(`/api/models?provider=${encodeURIComponent(resolvedProvider)}&_=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) {
         setModels([]);
+        return;
       }
+
+      const data = await res.json();
+      const nextModels = dedupeModels(
+        Array.isArray(data?.models) ? (data.models as ProviderModelSummary[]) : []
+      );
+      const modelIds = new Set(nextModels.map((model) => String(model.id || '').trim()).filter(Boolean));
+      setModels(nextModels);
 
       const nextDefault = String(data?.defaultModel || data?.provider?.defaultModel || '').trim();
       const stored = readModelSelection(resolvedProvider, '');
@@ -124,7 +164,6 @@ export function useProviderRuntime({
         (current && modelIds.has(current) && current) ||
         (nextDefault && modelIds.has(nextDefault) && nextDefault) ||
         firstAvailable ||
-        stored ||
         nextDefault ||
         defaultModel ||
         '';
@@ -149,11 +188,11 @@ export function useProviderRuntime({
   useEffect(() => {
     const storedProvider = readProviderSelection(defaultProvider);
     const runtime = readProviderRuntimeSettings(storedProvider);
+    const runtimeUrlParts = parseBaseUrlParts(runtime.baseUrl);
     setSelectedProviderState(storedProvider);
     setSelectedWorkingDirState(runtime.workingDir || defaultWorkingDir);
-    setProviderHostState(runtime.host || '');
-    setProviderPortState(runtime.port || '');
-    setProviderBaseUrlState(runtime.baseUrl || '');
+    setProviderHostState(runtimeUrlParts.host || runtime.host || '');
+    setProviderPortState(runtimeUrlParts.port || runtime.port || '');
     setProviderApiKeyState(runtime.apiKey || '');
     const storedModel = readModelSelection(storedProvider, defaultModel);
     setSelectedModelState(storedModel || defaultModel);
@@ -166,14 +205,21 @@ export function useProviderRuntime({
 
   useEffect(() => {
     if (!hydrated) return;
+
     const runtime = readProviderRuntimeSettings(selectedProvider);
     const provider = selectedProviderDefinition;
+    const fallbackUrl = runtime.baseUrl || provider?.config?.baseUrl || '';
+    const parsedUrl = parseBaseUrlParts(fallbackUrl);
+
     setSelectedWorkingDirState(runtime.workingDir || defaultWorkingDir);
-    setProviderHostState(runtime.host || provider?.config?.host || '');
-    setProviderPortState(runtime.port || (provider?.config?.port ? String(provider.config.port) : ''));
-    setProviderBaseUrlState(runtime.baseUrl || provider?.config?.baseUrl || '');
+    setProviderHostState(parsedUrl.host || runtime.host || provider?.config?.host || '');
+    setProviderPortState(parsedUrl.port || runtime.port || (provider?.config?.port ? String(provider.config.port) : ''));
     setProviderApiKeyState(runtime.apiKey || provider?.config?.apiKey || '');
-    setSelectedModelState(readModelSelection(selectedProvider, provider?.defaultModel || defaultModel) || provider?.defaultModel || defaultModel);
+    setSelectedModelState(
+      readModelSelection(selectedProvider, provider?.defaultModel || defaultModel) ||
+      provider?.defaultModel ||
+      defaultModel
+    );
     setAgentModelsState(readAgentModelOverrides(selectedProvider) as Partial<Record<AgentId, string>>);
     void refreshModels(selectedProvider);
   }, [defaultModel, defaultWorkingDir, hydrated, refreshModels, selectedProvider, selectedProviderDefinition]);
@@ -185,30 +231,58 @@ export function useProviderRuntime({
     writeProviderRuntimeSettings(selectedProvider, {
       host: providerHost,
       port: providerPort,
-      baseUrl: providerBaseUrl,
+      baseUrl: providerResolvedUrl,
       apiKey: providerApiKey,
       workingDir: selectedWorkingDir,
     });
     for (const agent of AGENT_ORDER) {
       writeAgentModelOverride(selectedProvider, agent, agentModels[agent]);
     }
+  }, [agentModels, hydrated, providerApiKey, providerHost, providerPort, providerResolvedUrl, selectedModel, selectedProvider, selectedWorkingDir]);
 
-    if (providerMode === 'openai-compat-http') {
-      const port = normalizePort(providerPort);
-      const payload = {
-        id: selectedProvider,
-        host: providerHost.trim() || undefined,
-        port,
-        baseUrl: providerBaseUrl.trim() || undefined,
-        apiKey: providerApiKey.trim() || undefined,
-      };
+  useEffect(() => {
+    if (!hydrated || providerMode !== 'openai-compat-http') return;
+
+    const payload = {
+      id: selectedProvider,
+      host: String(providerHost || '').trim() || undefined,
+      port: normalizePort(providerPort),
+      baseUrl: providerResolvedUrl || undefined,
+      apiKey: String(providerApiKey || '').trim() || undefined,
+    };
+    const syncKey = JSON.stringify(payload);
+    if (syncKey === configSyncKeyRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      configSyncKeyRef.current = syncKey;
       void fetch('/api/provider-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }).catch(() => undefined);
-    }
-  }, [agentModels, hydrated, providerApiKey, providerBaseUrl, providerHost, providerMode, providerPort, selectedModel, selectedProvider, selectedWorkingDir]);
+      })
+        .catch(() => undefined);
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [hydrated, providerApiKey, providerHost, providerMode, providerPort, providerResolvedUrl, refreshModels, selectedProvider]);
+
+  useEffect(() => {
+    if (!hydrated || providerMode !== 'openai-compat-http') return;
+
+    const host = String(providerHost || '').trim();
+    const port = String(providerPort || '').trim();
+    if (!host || !port) return;
+
+    const refreshKey = `${selectedProvider}::${providerResolvedUrl}::${providerApiKey ? 'auth' : 'noauth'}`;
+    if (refreshKey === refreshSyncKeyRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      refreshSyncKeyRef.current = refreshKey;
+      void refreshModels(selectedProvider).catch(() => undefined);
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [hydrated, providerApiKey, providerHost, providerMode, providerPort, providerResolvedUrl, refreshModels, selectedProvider]);
 
   const setSelectedProvider = useCallback((providerId: string) => {
     const normalized = String(providerId || '').trim() || defaultProvider;
@@ -242,8 +316,7 @@ export function useProviderRuntime({
     setProviderHost: setProviderHostState,
     providerPort,
     setProviderPort: setProviderPortState,
-    providerBaseUrl,
-    setProviderBaseUrl: setProviderBaseUrlState,
+    providerResolvedUrl,
     providerApiKey,
     setProviderApiKey: setProviderApiKeyState,
     agentModels,

@@ -2,7 +2,7 @@
   "lm-studio": {
     "id": "lm-studio",
     "host": "10.2.0.90",
-    "port": 8080,
+    "port": 1234,
     "baseUrl": "http://10.2.0.90:1234"
   },
   "ollama": {
@@ -10,5 +10,12 @@
     "host": "localhost",
     "port": 11434,
     "apiKey": ""
+  },
+  "openwebui": {
+    "id": "openwebui",
+    "host": "10.2.0.22",
+    "port": 8080,
+    "apiKey": "sk-89e75a3b0def449f8f3ff5cb68f43022",
+    "baseUrl": "http://10.2.0.22:8080"
   }
 }

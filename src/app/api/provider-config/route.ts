@@ -16,6 +16,7 @@ import {
   type ProviderConfig,
   readProviderConfigs,
   getProviderConfig,
+  getProviderConfigFilePath,
 } from '@/lib/providerConfig';
 
 export type { ProviderConfig };
@@ -31,9 +32,52 @@ const PROVIDER_DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {
   'openclaude-code': { host: 'localhost', port: 8080, apiKey: '' },
 };
 
+function normalizeBaseUrl(host?: string, port?: number, baseUrl?: string): string | undefined {
+  const trimmedBaseUrl = String(baseUrl || '').trim();
+  if (trimmedBaseUrl) {
+    try {
+      const url = new URL(trimmedBaseUrl);
+      return `${url.protocol}//${url.host}`.replace(/\/$/, '');
+    } catch {
+      // fall through to host/port derived URL
+    }
+  }
+
+  const trimmedHost = String(host || '').trim();
+  if (!trimmedHost || !Number.isFinite(port)) return undefined;
+  const scheme = port === 443 ? 'https' : 'http';
+  return `${scheme}://${trimmedHost}:${port}`;
+}
+
+function normalizeConnection(host?: string, port?: number, baseUrl?: string) {
+  const normalizedBaseUrl = normalizeBaseUrl(host, port, baseUrl);
+  if (!normalizedBaseUrl) {
+    return {
+      host: String(host || '').trim(),
+      port: typeof port === 'number' ? port : undefined,
+      baseUrl: undefined,
+    };
+  }
+
+  try {
+    const url = new URL(normalizedBaseUrl);
+    return {
+      host: url.hostname,
+      port: url.port ? Number.parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80),
+      baseUrl: normalizedBaseUrl,
+    };
+  } catch {
+    return {
+      host: String(host || '').trim(),
+      port: typeof port === 'number' ? port : undefined,
+      baseUrl: normalizedBaseUrl,
+    };
+  }
+}
+
 function writeConfig(data: Record<string, ProviderConfig>): void {
   try {
-    writeFileSync(`${process.cwd()}/provider-config.json`, JSON.stringify(data, null, 2));
+    writeFileSync(getProviderConfigFilePath(), JSON.stringify(data, null, 2));
   } catch {
     // read-only fs (some deploy environments) — silently ignore
   }
@@ -70,12 +114,18 @@ export async function POST(req: Request) {
 
   const saved = readProviderConfigs();
   const defaults = PROVIDER_DEFAULTS[id] ?? { host: 'localhost', port: 8080 };
+  const normalizedConnection = normalizeConnection(
+    typeof body.host === 'string' ? body.host : defaults.host,
+    typeof body.port === 'number' ? body.port : defaults.port,
+    typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+  );
+
   saved[id] = {
     id,
-    host: body.host ?? defaults.host ?? 'localhost',
-    port: typeof body.port === 'number' ? body.port : (defaults.port ?? 8080),
+    host: normalizedConnection.host || defaults.host || 'localhost',
+    port: normalizedConnection.port ?? defaults.port ?? 8080,
     ...(body.apiKey !== undefined ? { apiKey: body.apiKey } : {}),
-    ...(body.baseUrl !== undefined ? { baseUrl: body.baseUrl } : {}),
+    ...(normalizedConnection.baseUrl ? { baseUrl: normalizedConnection.baseUrl } : {}),
     ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
   };
 

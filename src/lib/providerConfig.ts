@@ -9,8 +9,9 @@
  * from CCR's config.json so the adapter works out-of-the-box.
  */
 import { existsSync, readFileSync, statSync, watch } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Read ALL LM Studio base URLs from the CCR config file.
@@ -84,6 +85,60 @@ const DEFAULTS: Record<string, Omit<ProviderConfig, 'id'>> = {
 
 let _cached: Record<string, ProviderConfig> | null = null;
 let _cachedMtime = 0;
+let _resolvedConfigRoot: string | null = null;
+
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+function looksLikeRepoRoot(dir: string): boolean {
+  try {
+    const packageJsonPath = join(dir, 'package.json');
+    if (!existsSync(packageJsonPath)) return false;
+    const raw = readFileSync(packageJsonPath, 'utf8');
+    return raw.includes('"name": "the-dev-squad"');
+  } catch {
+    return false;
+  }
+}
+
+function walkUpForRepoRoot(startDir: string): string | null {
+  let current = startDir;
+  for (let i = 0; i < 12; i += 1) {
+    if (looksLikeRepoRoot(current)) return current;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
+export function getProviderConfigRoot(): string {
+  if (_resolvedConfigRoot) return _resolvedConfigRoot;
+
+  const envRoot = String(process.env.DEV_SQUAD_CONFIG_ROOT || '').trim();
+  if (envRoot) {
+    _resolvedConfigRoot = envRoot;
+    return envRoot;
+  }
+
+  const fromModule = walkUpForRepoRoot(MODULE_DIR);
+  if (fromModule) {
+    _resolvedConfigRoot = fromModule;
+    return fromModule;
+  }
+
+  const fromCwd = walkUpForRepoRoot(process.cwd());
+  if (fromCwd) {
+    _resolvedConfigRoot = fromCwd;
+    return fromCwd;
+  }
+
+  _resolvedConfigRoot = process.cwd();
+  return _resolvedConfigRoot;
+}
+
+export function getProviderConfigFilePath(): string {
+  return join(getProviderConfigRoot(), 'provider-config.json');
+}
 
 function clearProviderConfigCache() {
   _cached = null;
@@ -92,7 +147,7 @@ function clearProviderConfigCache() {
 
 // Watch the config file and invalidate the cache when it changes.
 try {
-  const configPath = join(process.cwd(), 'provider-config.json');
+  const configPath = getProviderConfigFilePath();
   // fs.watch may throw on some platforms; ignore failures.
   watch(configPath, { persistent: false }, () => {
     clearProviderConfigCache();
@@ -102,7 +157,7 @@ try {
 }
 
 export function readProviderConfigs(): Record<string, ProviderConfig> {
-  const configFile = join(process.cwd(), 'provider-config.json');
+  const configFile = getProviderConfigFilePath();
   try {
     if (!existsSync(configFile)) {
       clearProviderConfigCache();

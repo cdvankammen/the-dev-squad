@@ -314,3 +314,63 @@
   lastError: null
 }
 [2026-04-30T17:29:24.223Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+
+[devmemory] --- New MCP session 2026-04-30T17:49:18.397Z ---
+[2026-04-30T17:49:20.135Z] MCP-ERR: [MCP] MCP SDK server connected and listening on stdio.
+[MCP-RAW-IN] {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_embedding_status","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","warmup":true}}}
+
+[2026-04-30T17:49:20.957Z] MCP-ERR: [embed] provider=xenova-wasm model=Xenova/all-MiniLM-L6-v2 dim=384
+[MCP] get_embedding_status {
+  initialized: true,
+  provider: 'xenova-wasm',
+  model: 'Xenova/all-MiniLM-L6-v2',
+  dimensions: 384,
+  fallback: false,
+  lastError: null
+}
+[2026-04-30T17:49:20.963Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+
+[devmemory] --- New MCP session 2026-04-30T18:17:05.134Z ---
+[2026-04-30T18:17:06.170Z] MCP-ERR: [MCP] MCP SDK server connected and listening on stdio.
+[MCP-RAW-IN] {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_embedding_status","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","warmup":true}}}
+
+[2026-04-30T18:17:06.686Z] MCP-ERR: [embed] provider=xenova-wasm model=Xenova/all-MiniLM-L6-v2 dim=384
+[MCP] get_embedding_status {
+  initialized: true,
+  provider: 'xenova-wasm',
+  model: 'Xenova/all-MiniLM-L6-v2',
+  dimensions: 384,
+  fallback: false,
+  lastError: null
+}
+[2026-04-30T18:17:06.686Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+
+[devmemory] --- New MCP session 2026-04-30T18:32:32.183Z ---
+[2026-04-30T18:32:33.796Z] MCP-ERR: [MCP] MCP SDK server connected and listening on stdio.
+[2026-04-30T18:32:34.069Z] MCP-ERR: [MCP-RAW-IN] {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_embedding_status","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","warmup":true}}}
+
+[2026-04-30T18:32:35.433Z] MCP-ERR: [embed] provider=xenova-wasm model=Xenova/all-MiniLM-L6-v2 dim=384
+[MCP] get_embedding_status {
+  initialized: true,
+  provider: 'xenova-wasm',
+  model: 'Xenova/all-MiniLM-L6-v2',
+  dimensions: 384,
+  fallback: false,
+  lastError: null
+}
+[2026-04-30T18:32:35.519Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}
+
+[devmemory] --- New MCP session 2026-04-30T18:34:04.716Z ---
+[2026-04-30T18:34:07.975Z] MCP-ERR: [MCP] MCP SDK server connected and listening on stdio.
+[MCP-RAW-IN] {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_embedding_status","arguments":{"workspace_root":"/Users/stillbulldog35/Documents/personalGithub/the-dev-squad","warmup":true}}}
+
+[2026-04-30T18:34:09.067Z] MCP-ERR: [embed] provider=xenova-wasm model=Xenova/all-MiniLM-L6-v2 dim=384
+[2026-04-30T18:34:09.070Z] MCP-ERR: [MCP] get_embedding_status {
+  initialized: true,
+  provider: 'xenova-wasm',
+  model: 'Xenova/all-MiniLM-L6-v2',
+  dimensions: 384,
+  fallback: false,
+  lastError: null
+}
+[2026-04-30T18:34:09.070Z] MCP: {"result":{"content":[{"type":"text","text":"{\n  \"initialized\": true,\n  \"provider\": \"xenova-wasm\",\n  \"model\": \"Xenova/all-MiniLM-L6-v2\",\n  \"dimensions\": 384,\n  \"fallback\": false,\n  \"lastError\": null\n}"}],"initialized":true,"provider":"xenova-wasm","model":"Xenova/all-MiniLM-L6-v2","dimensions":384,"fallback":false,"lastError":null},"jsonrpc":"2.0","id":1}

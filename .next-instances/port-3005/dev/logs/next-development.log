@@ -1,22 +1,417 @@
-[00:00:01.925] Server  LOG     ✓ Ready in 1611ms
-[00:00:08.415] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[00:00:22.643] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:22.709] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:22.765] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:25.232] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:30.987] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:31.053] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:00:53.508] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:02:53.124] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:03:29.719] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:09:55.290] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:09:58.659] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:14:19.158] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:14:25.621] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:14:33.667] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:14:42.654] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:18:04.027] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:18:33.657] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:19:25.193] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:20:01.653] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
-[00:20:01.720] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
+[00:00:01.812] Server  LOG     ✓ Ready in 1527ms
+[00:00:09.672] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:13.491] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
+[00:03:20.683] Server  ERROR   ⨯ SyntaxError: Unexpected end of JSON input
+[00:18:25.719] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:18:33.019] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:33.520] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:33.753] Server  ERROR   ⨯ ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:33.809] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:36.022] Server  LOG     ○ Compiling /_not-found ...
+[00:18:41.838] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:45.209] Server  ERROR   ⨯ ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:45.316] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:46.045] Server  ERROR   ⨯ ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:46.080] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/api/chat/route.ts
+[00:18:46.141] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:18:46.507] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:18:46.609] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:18:58.107] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:18:58.210] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:19:28.085] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:19:28.187] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:19:58.283] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:19:58.386] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:20:28.053] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:20:28.390] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:20:58.021] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:20:58.390] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:21:28.296] Browser ERROR   uncaughtError: ModuleBuildError: Module build failed (from ./node_modules/.pnpm/next@16.1.6_@babel+core@7.29.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/build/webpack/loaders/next-swc-loader.js):
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+
+Caused by:
+    Syntax Error
+[00:21:28.483] Browser ERROR   ./src/app/api/chat/route.ts
+Error:   × Expression expected
+     ╭─[/Users/stillbulldog35/Documents/personalGithub/the-dev-squad/src/app/api/chat/route.ts:505:1]
+ 502 │         resolveResponse(await streamClaude(
+ 503 │           { ...opts, forceHost: true },
+ 504 │ 
+ 505 │       if (exitCode !== 0 || exitSignal) {
+     ·       ──
+ 506 │         const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+ 507 │         try {
+ 508 │           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+     ╰────
+
+Caused by:
+    Syntax Error
+[00:21:28.583] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:21:28.696] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:21:29.165] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:21:29.284] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:21:30.158] Server  WARN    ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[00:21:30.543] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:34:09.454] Server  WARN    ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[00:34:09.455] Browser ERROR   React has detected a change in the order of Hooks called by %s. This will lead to bugs and errors if not fixed. For more information, read the Rules of Hooks: https://react.dev/link/rules-of-hooks
+
+   Previous render            Next render
+   ------------------------------------------------------
+%s   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ PipelinePage 1. useState                   useState
+2. useState                   useState
+3. useState                   useState
+4. useState                   useState
+5. useState                   useState
+6. useState                   useState
+7. useState                   useState
+8. useState                   useState
+9. useState                   useState
+10. useState                  useState
+11. useState                  useState
+12. useState                  useState
+13. useState                  useState
+14. useState                  useState
+15. useState                  useState
+16. useRef                    useRef
+17. useMemo                   useRef
+
+[00:34:09.598] Server  ERROR   ⨯ ReferenceError: useMemo is not defined

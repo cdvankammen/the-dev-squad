@@ -475,7 +475,9 @@ function streamClaude(
       });
     }
 
-    child.on('close', async () => {
+    child.on('close', async (code, signal) => {
+      const exitCode = typeof code === 'number' ? code : 0;
+      const exitSignal = signal ?? null;
       if (canFallbackToHost && isRecoverableDockerAuthFailure(`${diagnosticTail}\n${stderr}\n${lastResultText}`)) {
         try {
           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
@@ -503,6 +505,35 @@ function streamClaude(
           agent,
           sessionId,
         ));
+        return;
+      }
+
+      if (exitCode !== 0 || exitSignal) {
+        const errorText = stderr.trim() || lastResultText.trim() || diagnosticTail.trim() || `Runner exited with code ${exitCode}${exitSignal ? ` (${exitSignal})` : ''}`;
+        try {
+          const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
+          const phase = s.currentPhase || 'concept';
+          s.events.push({
+            time: new Date().toISOString(),
+            agent,
+            phase,
+            type: 'failure',
+            text: errorText.slice(-2000),
+          });
+          if (s.agentStatus) s.agentStatus[agent] = 'idle';
+          writeMergedState(eventsFile, s as Record<string, unknown>);
+        } catch {}
+
+        resolveResponse(
+          NextResponse.json(
+            {
+              success: false,
+              error: errorText.slice(-2000),
+              sessionId: newSessionId,
+            },
+            { status: 500 }
+          )
+        );
         return;
       }
 
