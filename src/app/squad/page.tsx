@@ -132,7 +132,7 @@ export default function SquadPage() {
     approveBash,
     resetState,
     agentEvents,
-  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 1500 : 2200, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 2500 : 4000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   useEffect(() => {
     const shouldPollPending = mode === 'pipeline' && (
@@ -148,7 +148,7 @@ export default function SquadPage() {
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 2500);
+    }, 5000);
     return () => clearInterval(interval);
   }, [mode, pendingApproval, state.pipelineStatus]);
 
@@ -354,8 +354,8 @@ export default function SquadPage() {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-          <aside className="flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))] p-3 xl:min-h-0">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+          <aside className="flex min-h-[24rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))] p-3 xl:min-h-0">
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               <div>
                 <div className="mb-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500">Mode</div>
@@ -376,35 +376,37 @@ export default function SquadPage() {
               </div>
 
               <div className="space-y-2">
-                <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                  <select
-                    title="Provider"
-                    value={selectedProvider}
-                    onChange={(e) => setSelectedProvider(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                  >
-                    {providerOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-[#121522]">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    title="Model"
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
-                  >
-                    {modelOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-[#121522]">
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                  <div className="grid gap-2">
+                    <select
+                      title="Provider"
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                    >
+                      {providerOptions.map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      title="Model"
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
+                    >
+                      {modelOptions.map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-[#121522]">
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void refreshModels(selectedProvider)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                    className="min-h-[5.4rem] rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
                   >
                     Refresh Models
                   </button>
@@ -415,25 +417,27 @@ export default function SquadPage() {
                     title="Working directory"
                     value={selectedWorkingDir}
                     onChange={(e) => setSelectedWorkingDir(e.target.value)}
-                    placeholder="/Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
+                    placeholder="Optional — /Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500">Sets the workspace boundary for the current provider run.</p>
                 </div>
                 {showHttpSettings && (
                   <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">Connection</div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <input
                         title="Host or IP address"
                         value={providerHost}
                         onChange={(e) => setProviderHost(e.target.value)}
-                        placeholder="10.2.0.90"
+                        placeholder="e.g. 10.2.0.90"
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
                       />
                       <input
                         title="Port"
                         value={providerPort}
                         onChange={(e) => setProviderPort(e.target.value)}
-                        placeholder="1234"
+                        placeholder="e.g. 1234"
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
                       />
                     </div>
@@ -549,11 +553,12 @@ export default function SquadPage() {
                           </Badge>
                         </div>
                       </button>
+                      <label className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Model override</label>
                       <select
                         title={`Model for ${AGENT_NAMES[agent]}`}
                         value={agentModels[agent] || selectedModel}
                         onChange={(e) => setAgentModel(agent, e.target.value)}
-                        className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[9px] text-slate-300 focus:outline-none"
+                        className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] text-slate-300 focus:outline-none"
                       >
                         {modelOptions.map((opt) => (
                           <option key={opt.id} value={opt.id} className="bg-[#121522]">{opt.label}</option>
@@ -566,7 +571,7 @@ export default function SquadPage() {
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))]">
+          <section className="flex min-h-[34rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,21,33,0.96),rgba(10,11,18,0.98))] xl:min-h-0">
             <div className="shrink-0 border-b border-white/10 px-4 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">

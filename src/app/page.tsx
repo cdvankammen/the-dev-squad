@@ -84,6 +84,7 @@ const MANUAL_ROLES: Record<string, string> = {
 type QueueMessage = {
   id: string;
   text: string;
+  agent: AgentId;
   isEditing?: boolean;
 };
 
@@ -119,7 +120,7 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 1500 : 2200, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 2500 : 4000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -235,38 +236,45 @@ export default function PipelinePage() {
         const data = await res.json();
         setPendingApproval(data?.tool && data?.approved === null ? data : null);
       } catch {}
-    }, 2500);
+    }, 5000);
     return () => clearInterval(interval);
   }, [isPipeline, pendingApproval, state.pipelineStatus]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNowMs(Date.now()), 1000);
+    if (!state.runtime?.activeTurn) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [state.runtime?.activeTurn]);
 
-  const dispatchSupervisorMessage = useCallback(async (message: string) => {
-    setSendingAgents(prev => new Set([...prev, 'S']));
+  const dispatchTopMessage = useCallback(async (agent: AgentId, message: string) => {
+    setSendingAgents(prev => new Set([...prev, agent]));
     try {
-      return await sendChat('S', message, isPipeline ? {
+      return await sendChat(agent, message, isPipeline ? {
         securityMode: selectedSecurityMode,
         permissionMode: selectedPermissionMode,
         runGoal: selectedRunGoal,
         runFinalAudit: selectedRunFinalAudit,
       } : undefined);
     } finally {
-      setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+      setSendingAgents(prev => { const n = new Set(prev); n.delete(agent); return n; });
     }
   }, [isPipeline, selectedPermissionMode, selectedRunFinalAudit, selectedRunGoal, selectedSecurityMode, sendChat]);
 
   async function handleSend() {
     const message = chatInput.trim();
     if (!message) return;
-    if (sendingAgents.has('S')) {
-      setSupervisorQueue((prev) => [...prev, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text: message, isEditing: false }]);
+    const targetAgent: AgentId = isPipeline ? 'S' : selectedAgent;
+    if (sendingAgents.has(targetAgent)) {
+      setSupervisorQueue((prev) => [...prev, {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        text: message,
+        agent: targetAgent,
+        isEditing: false,
+      }]);
       setChatInput('');
       return;
     }
-    const response = await dispatchSupervisorMessage(message);
+    const response = await dispatchTopMessage(targetAgent, message);
     if ((response as { success?: boolean } | undefined)?.success !== false) {
       setChatInput('');
     }
@@ -274,10 +282,11 @@ export default function PipelinePage() {
 
   async function handleSendQueuedSupervisorMessage(itemId: string) {
     const queued = supervisorQueue.find((item) => item.id === itemId);
-    if (!queued || sendingAgents.has('S') || queueDispatching) return;
+    const targetAgent = queued?.agent || 'S';
+    if (!queued || sendingAgents.has(targetAgent) || queueDispatching) return;
     setQueueDispatching(true);
     try {
-      const response = await dispatchSupervisorMessage(queued.text);
+      const response = await dispatchTopMessage(targetAgent, queued.text);
       if ((response as { success?: boolean } | undefined)?.success !== false) {
         setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
       }
@@ -299,10 +308,9 @@ export default function PipelinePage() {
   }
 
   useEffect(() => {
-    if (queueDispatching || sendingAgents.has('S')) return;
-    const nextQueued = supervisorQueue[0];
+    if (queueDispatching) return;
+    const nextQueued = supervisorQueue.find((item) => !item.isEditing && !sendingAgents.has(item.agent));
     if (!nextQueued) return;
-    if (nextQueued.isEditing) return;
 
     const queuedText = nextQueued.text.trim();
     if (!queuedText) {
@@ -311,7 +319,7 @@ export default function PipelinePage() {
     }
 
     setQueueDispatching(true);
-    void dispatchSupervisorMessage(queuedText)
+    void dispatchTopMessage(nextQueued.agent, queuedText)
       .then((response) => {
         if ((response as { success?: boolean } | undefined)?.success !== false) {
           setSupervisorQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
@@ -320,7 +328,7 @@ export default function PipelinePage() {
       .finally(() => {
         setQueueDispatching(false);
       });
-  }, [dispatchSupervisorMessage, queueDispatching, sendingAgents, supervisorQueue]);
+  }, [dispatchTopMessage, queueDispatching, sendingAgents, supervisorQueue]);
 
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
@@ -492,7 +500,7 @@ export default function PipelinePage() {
       {/* Hero: Animation + Feed (65%) + Dashboard (35%) */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,65%)_minmax(320px,1fr)]">
         {/* Office Scene + Live Feed below it — height driven by dashboard */}
-        <div className="flex h-0 min-h-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]">
+        <div className="flex min-h-[30rem] flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))] xl:min-h-full">
           <div className="p-2">
             <LunarOfficeScene
               activePhase={phase}
@@ -575,7 +583,7 @@ export default function PipelinePage() {
               </div>
             </div>
             <div className="mt-2 space-y-2">
-              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <select
                   title="Provider"
                   value={selectedProvider}
@@ -599,7 +607,7 @@ export default function PipelinePage() {
                 <button
                   type="button"
                   onClick={() => void refreshModels(selectedProvider)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white xl:self-stretch"
                 >
                   Refresh Models
                 </button>
@@ -610,26 +618,27 @@ export default function PipelinePage() {
                   title="Working directory"
                   value={selectedWorkingDir}
                   onChange={(e) => setSelectedWorkingDir(e.target.value)}
-                  placeholder="/Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
+                  placeholder="Optional — /Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                 />
-                <p className="text-[10px] text-slate-500">Optional. Leave blank to use the app default workspace.</p>
+                <p className="text-[10px] text-slate-500">Sets the working boundary for the agents. Leave blank to use the app default workspace.</p>
               </div>
               {showHttpSettings && (
                 <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Connection</div>
                   <div className="grid gap-2 md:grid-cols-2">
                     <input
                       title="Host or IP address"
                       value={providerHost}
                       onChange={(e) => setProviderHost(e.target.value)}
-                      placeholder="10.2.0.90"
+                      placeholder="e.g. 10.2.0.90"
                       className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                     />
                     <input
                       title="Port"
                       value={providerPort}
                       onChange={(e) => setProviderPort(e.target.value)}
-                      placeholder="1234"
+                      placeholder="e.g. 1234"
                       className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                     />
                   </div>
@@ -1012,10 +1021,10 @@ export default function PipelinePage() {
           When the security audit starts, E is added on the right (same size as S)
           and the center columns squish to accommodate. */}
       <div
-        className={`grid min-h-[72vh] grid-cols-1 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] xl:grid-rows-2 ${auditHasStarted ? 'xl:[grid-template-columns:25%_1fr_1fr_25%]' : 'xl:[grid-template-columns:30%_1fr_1fr]'}`}
+        className={`grid min-h-[82vh] auto-rows-[minmax(26rem,auto)] grid-cols-1 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] xl:grid-rows-2 ${auditHasStarted ? 'xl:[grid-template-columns:25%_1fr_1fr_25%]' : 'xl:[grid-template-columns:30%_1fr_1fr]'}`}
       >
         {/* S — Supervisor, spans both rows */}
-          <div className="flex min-h-[28rem] cursor-pointer flex-col overflow-hidden bg-[#0c0c18] xl:row-span-2 xl:min-h-0" onClick={() => setSelectedAgent('S')}>
+          <div className="flex min-h-[32rem] cursor-pointer flex-col overflow-hidden bg-[#0c0c18] xl:row-span-2 xl:min-h-0" onClick={() => setSelectedAgent('S')}>
             <div className="flex items-center gap-3 border-b-2 border-emerald-600 px-3.5 py-2.5">
             <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] border-2 text-sm font-bold transition-all ${
               (state.agentStatus.S === 'active' || state.agentStatus.S === 'working')
@@ -1073,7 +1082,9 @@ export default function PipelinePage() {
           </div>
           <div className="flex-shrink-0 border-t border-[#1a1a2a] px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1.5 text-[10px] text-[#444]">
-              Recommended: <span className="font-semibold text-emerald-400">Supervisor first</span>
+              {isPipeline
+                ? <>Recommended: <span className="font-semibold text-emerald-400">Supervisor first</span></>
+                : <>Main input target: <span className="font-semibold text-emerald-400">{AGENT_NAMES[selectedAgent]}</span></>}
             </div>
             <div className="flex items-end gap-2">
               <AutoGrowTextarea
@@ -1089,7 +1100,7 @@ export default function PipelinePage() {
                   ? (supervisorRecommendation?.chatCommand
                       ? `Ask the supervisor anything, or try "${supervisorRecommendation.chatCommand}"`
                       : 'Ask the supervisor anything, or chat with any specialist directly...')
-                  : 'Chat with the Supervisor'}
+                  : `Message ${AGENT_NAMES[selectedAgent]} from the main box...`}
                 className="max-h-40 flex-1 rounded-lg border border-[#252530] bg-[#14141e] px-3 py-2 text-sm text-white placeholder-[#444] focus:border-emerald-600 focus:outline-none disabled:opacity-30"
               />
               <button onClick={handleSend} disabled={!chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
@@ -1102,7 +1113,7 @@ export default function PipelinePage() {
                 {supervisorQueue.map((item, index) => (
                   <div key={item.id} className="rounded-md border border-white/10 bg-[#10101a] p-2">
                     <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-slate-500">
-                      <span>Queued #{index + 1}</span>
+                        <span>Queued #{index + 1} · {AGENT_NAMES[item.agent]}</span>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -1153,7 +1164,7 @@ export default function PipelinePage() {
             <div
               key={id}
               onClick={() => { setSelectedAgent(id); setExpandedAgent(id); }}
-              className={`flex min-h-[24rem] cursor-pointer flex-col overflow-hidden transition-colors xl:min-h-0 ${
+              className={`flex min-h-[28rem] cursor-pointer flex-col overflow-hidden transition-colors xl:min-h-0 ${
                 isSelected ? 'bg-[#0c0c18]' : 'bg-[#08080d] hover:bg-[#0a0a12]'
               }`}
             >
