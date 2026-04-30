@@ -34,6 +34,7 @@ All notable changes to **The Dev Squad** are documented here. Format follows [Ke
 - Added optional token protection for skill/MCP control endpoints:
   - `DEV_SQUAD_API_TOKEN` enables auth checks on `/api/skill/dev-squad` and `/api/mcp`.
   - Supports `Authorization: Bearer <token>` or `x-dev-squad-token` headers.
+  - When token is unset, access is now limited to localhost only (non-local requests are rejected).
 
 ## [v0.4.3] — 2026-04-19
 

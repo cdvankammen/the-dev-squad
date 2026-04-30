@@ -21,6 +21,8 @@ export interface SkillAuthResult {
   message?: string;
 }
 
+const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+
 function extractSkillToken(req: NextRequest): string {
   const auth = String(req.headers.get('authorization') || '').trim();
   if (auth.toLowerCase().startsWith('bearer ')) {
@@ -36,9 +38,24 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(aBuf, bBuf);
 }
 
+function isLocalSkillRequest(req: NextRequest): boolean {
+  try {
+    const host = new URL(req.url).hostname.toLowerCase();
+    return LOCALHOST_HOSTNAMES.has(host);
+  } catch {
+    return false;
+  }
+}
+
 export function authorizeSkillRequest(req: NextRequest): SkillAuthResult {
   const expected = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
   if (!expected) {
+    if (!isLocalSkillRequest(req)) {
+      return {
+        ok: false,
+        message: 'Unauthorized: DEV_SQUAD_API_TOKEN is required for non-local skill/MCP access',
+      };
+    }
     return { ok: true };
   }
 
