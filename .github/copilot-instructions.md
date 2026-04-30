@@ -1,7 +1,8 @@
-<todos title="Positive branch defense review" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
-- [-] collect-branch-context: Capture current branch/base context and isolate recent changes in the requested files 🔴
-- [ ] inspect-target-files: Review the specified files for strong design choices and provider-agnostic autonomy robustness 🔴
-- [ ] compile-defense-review: Produce structured positive review with keep checklist, defer list, and low-risk enhancements 🔴
+<todos title="Updated branch FOR/AGAINST review" rule="Review steps frequently throughout the conversation and DO NOT stop between steps unless they explicitly require it.">
+- [x] inspect-branch-diff-target-files: Inspect current branch and local diffs for the five requested files 🔴
+- [x] assess-file-level-strengths: Identify concrete strengths worth keeping in each relevant file 🟡
+- [x] identify-noncritical-improvements: Identify non-critical AGAINST items and rank top 3 next improvements 🔴
+- [x] deliver-for-against-summary: Provide concise FOR/AGAINST review with top 3 next actions 🔴
 </todos>
 
 ## vexp context tools <!-- vexp v2.0.12 -->

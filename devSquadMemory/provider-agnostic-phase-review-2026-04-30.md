@@ -74,4 +74,43 @@
 - Keep using LM Studio endpoint `10.2.0.90:1234` for variation tests across small/medium/large model mixes.
 - For exposed MCP/Skill usage, set:
   - `DEV_SQUAD_API_TOKEN=<secret>`
-- If no token env var is set, endpoints remain local-open for developer convenience.
+
+## Additional hardening completed after phase review draft
+
+### Phase 19 / 20 / 21 updates
+1. **PID-first orchestrator lifecycle control** (`src/lib/pipeline-control.ts`)
+  - Launch now stores `runtime.orchestratorPid` and `runtime.orchestratorStartedAt`.
+  - Stop paths prefer PID-owned termination before pattern fallback.
+  - Runtime records `orchestratorStoppedAt` and clears PID on stop.
+
+2. **Recency-aware state merge semantics** (`src/app/api/chat/route.ts`)
+  - Merge now compares latest event timestamps between current/incoming states.
+  - Session/status/provider/model fields avoid stale overwrite from older snapshots.
+
+3. **Fail-closed orchestration signal parsing** (`pipeline/orchestrator.ts`)
+  - Unparseable reviewer/test/audit output no longer auto-approves.
+  - Invalid/unstructured outputs generate explicit follow-up issues/failures/findings.
+
+4. **Auth hardening expanded to control APIs**
+  - `/api/chat`, `/api/state`, `/api/reset` now require token OR explicit localhost dev bypass.
+  - Centralized in `authorizeLocalOrTokenRequest`.
+  - `skill-runtime` internal fetches now forward token headers automatically when configured.
+
+5. **Unsafe dev-open default removed**
+  - If `DEV_SQUAD_API_TOKEN` is unset, access is denied unless
+    `DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1` **and** request resolves to localhost.
+  - This prevents silent open access from non-local contexts.
+
+6. **Process kill pattern narrowing**
+  - Orchestrator/opencode/runner stop patterns are scoped to Build invocation context where possible to reduce accidental host process termination.
+
+### Current local env expectation
+- Recommended secure setup:
+  - `DEV_SQUAD_API_TOKEN=<secret>`
+- Optional local-only dev bypass (not recommended beyond localhost):
+  - `DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1`
+
+### Validation after latest hardening
+- `npx tsc --noEmit` ✅
+- `npx tsx scripts/test-runner.mjs` ✅
+- Post-hardening CRITICAL/HIGH audit on orchestrator/control/chat/state/reset/skill-runtime: **none found**.

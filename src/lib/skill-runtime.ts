@@ -48,12 +48,17 @@ function isLocalSkillRequest(req: NextRequest): boolean {
 }
 
 export function authorizeSkillRequest(req: NextRequest): SkillAuthResult {
+  return authorizeLocalOrTokenRequest(req, 'skill/MCP endpoint');
+}
+
+export function authorizeLocalOrTokenRequest(req: NextRequest, surfaceLabel = 'endpoint'): SkillAuthResult {
   const expected = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
   if (!expected) {
-    if (!isLocalSkillRequest(req)) {
+    const allowUnauthLocal = String(process.env.DEV_SQUAD_ALLOW_UNAUTH_LOCAL || '').trim() === '1';
+    if (!(allowUnauthLocal && isLocalSkillRequest(req))) {
       return {
         ok: false,
-        message: 'Unauthorized: DEV_SQUAD_API_TOKEN is required for non-local skill/MCP access',
+        message: `Unauthorized: set DEV_SQUAD_API_TOKEN (recommended) or DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1 for localhost-only ${surfaceLabel} development`,
       };
     }
     return { ok: true };
@@ -66,7 +71,16 @@ export function authorizeSkillRequest(req: NextRequest): SkillAuthResult {
 
   return {
     ok: false,
-    message: 'Unauthorized: missing or invalid token for skill/MCP endpoint',
+    message: `Unauthorized: missing or invalid token for ${surfaceLabel}`,
+  };
+}
+
+function buildInternalAuthHeaders(): Record<string, string> {
+  const token = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
+  if (!token) return {};
+  return {
+    authorization: `Bearer ${token}`,
+    'x-dev-squad-token': token,
   };
 }
 
@@ -90,6 +104,7 @@ async function parseJsonSafe(res: Response): Promise<unknown> {
 export async function fetchPipelineState(origin: string, mode: SkillMode = 'pipeline'): Promise<Record<string, unknown>> {
   const res = await fetch(`${origin}/api/state?mode=${encodeURIComponent(mode)}`, {
     method: 'GET',
+    headers: buildInternalAuthHeaders(),
     cache: 'no-store',
   });
   const data = await parseJsonSafe(res);
@@ -146,7 +161,10 @@ export async function sendSupervisorMessage(
 
   const chatRes = await fetch(`${origin}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...buildInternalAuthHeaders(),
+    },
     body: JSON.stringify(payload),
     cache: 'no-store',
   });

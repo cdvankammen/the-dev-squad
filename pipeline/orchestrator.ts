@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, copyFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -52,6 +52,7 @@ import {
   buildPlanningWriteResumePrompt,
   detectPlanningStep,
 } from '../src/lib/pipeline-planning.ts';
+import { mutateJsonStateLocked } from '../src/lib/locked-json-state.ts';
 import { createRunner, isRecoverableDockerAuthFailure } from './runner.ts';
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -287,6 +288,7 @@ interface PipelineState {
 }
 
 const eventsFile = join(projectDir, 'pipeline-events.json');
+const MAX_EVENT_HISTORY = 3000;
 
 let state: PipelineState;
 if (resumingExistingProject && existsSync(eventsFile)) {
@@ -366,8 +368,60 @@ if (resumingExistingProject && existsSync(eventsFile)) {
   };
 }
 
+function normalizeEvents(events: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(events)
+    ? events.filter((event): event is Record<string, unknown> => !!event && typeof event === 'object')
+    : [];
+}
+
+function mergeEvents(
+  currentEvents: Array<Record<string, unknown>>,
+  incomingEvents: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const merged: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const event of [...currentEvents, ...incomingEvents]) {
+    const key = [
+      String(event.time || ''),
+      String(event.agent || ''),
+      String(event.phase || ''),
+      String(event.type || ''),
+      String(event.text || ''),
+      String(event.detail || ''),
+    ].join('::');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(event);
+  }
+  merged.sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+  return merged;
+}
+
 function flush() {
-  writeFileSync(eventsFile, JSON.stringify(state, null, 2));
+  const snapshot = state as unknown as Record<string, unknown>;
+  mutateJsonStateLocked(
+    eventsFile,
+    (current) => {
+      const currentRecord = current as Record<string, unknown>;
+      const merged: Record<string, unknown> = { ...snapshot };
+
+      const controlKeys = ['stopAfterPhase', 'runGoal', 'runFinalAudit'];
+      for (const key of controlKeys) {
+        if (key in currentRecord) {
+          merged[key] = currentRecord[key];
+        }
+      }
+
+      merged.events = mergeEvents(normalizeEvents(currentRecord.events), normalizeEvents(snapshot.events));
+      if (Array.isArray(merged.events) && merged.events.length > MAX_EVENT_HISTORY) {
+        merged.events = merged.events.slice(-MAX_EVENT_HISTORY);
+      }
+
+      Object.assign(currentRecord, merged);
+      Object.assign(state as unknown as Record<string, unknown>, currentRecord);
+    },
+    { createIfMissing: () => ({ ...snapshot }) }
+  );
 }
 
 function emit(
@@ -378,6 +432,9 @@ function emit(
   detail?: string
 ) {
   state.events.push({ time: new Date().toISOString(), agent, phase, type, text, detail });
+  if (state.events.length > MAX_EVENT_HISTORY) {
+    state.events = state.events.slice(-MAX_EVENT_HISTORY);
+  }
   flush();
 
   // Terminal output with color
@@ -1099,12 +1156,12 @@ function parseSignal(result: string): Record<string, unknown> {
       emit('system', state.currentPhase, 'status', 'Parsed failure signal from text');
       return { status: 'failed', failures: [result] };
     }
-    if (lower.includes('all tests pass') || lower.includes('tests passed') || lower.includes('approved') || lower.includes('code is correct')) {
-      emit('system', state.currentPhase, 'status', 'Parsed positive signal from text');
-      return { status: 'approved' };
-    }
-    emit('system', state.currentPhase, 'status', 'Could not parse signal — treating as approved');
-    return { status: 'approved' };
+    emit('system', state.currentPhase, 'status', 'Could not parse signal — treating as invalid (fail-closed)');
+    return {
+      status: 'invalid',
+      parseError: true,
+      raw: result,
+    };
   }
 }
 
@@ -1312,7 +1369,15 @@ async function runPlanReviewPhase(
       break;
     }
 
-    const questions = (signal.questions as string[]) || [];
+    const questions = Array.isArray(signal.questions) ? (signal.questions as string[]) : [];
+    if (questions.length === 0) {
+      const parseError = signal.parseError === true;
+      questions.push(
+        parseError
+          ? 'Reviewer response was not valid JSON. Please provide either {"status":"approved"} or {"status":"questions","questions":["..."]}. If not approved, list at least one concrete plan question.'
+          : 'Reviewer did not provide concrete questions. If not approved, list at least one specific question that blocks approval.'
+      );
+    }
     questions.forEach((question, index) => {
       emit('B', 'plan-review', 'question', `Q${index + 1}: ${question}`);
     });
@@ -1413,6 +1478,21 @@ async function runSecurityAudit(): Promise<{ paused: boolean }> {
     const rawIssues = Array.isArray(signal.issues) ? signal.issues : [];
     const validSeverities: AuditFinding['severity'][] = ['critical', 'high', 'medium', 'low'];
     const nowIso = new Date().toISOString();
+
+    if (rawIssues.length === 0) {
+      findings.push({
+        id: `finding-${randomUUID().slice(0, 8)}`,
+        severity: 'medium',
+        text:
+          signal.parseError === true
+            ? 'Security auditor response was not valid JSON. Re-run audit with strict JSON-only response before deploy.'
+            : 'Security auditor returned non-approved status without concrete findings. Re-run audit and require explicit findings or approved status.',
+        status: 'open',
+        createdAt: nowIso,
+        history: [{ time: nowIso, action: 'created' }],
+      });
+    }
+
     for (const raw of rawIssues) {
       let severity: AuditFinding['severity'] = 'medium';
       let text = '';
@@ -1745,7 +1825,15 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
       codeApproved = true;
       emit('D', 'code-review', 'approval', 'CODE APPROVED');
     } else {
-      const issues = (signal.issues as string[]) || [];
+      const issues = Array.isArray(signal.issues) ? (signal.issues as string[]) : [];
+      if (issues.length === 0) {
+        const parseError = signal.parseError === true;
+        issues.push(
+          parseError
+            ? 'Code review response was not valid JSON. Provide either {"status":"approved"} or {"status":"issues","issues":["..."]}. If not approved, include at least one concrete issue.'
+            : 'Code review did not provide concrete issues. If not approved, include at least one specific issue.'
+        );
+      }
 
       issues.forEach((issue, index) => {
         emit('D', 'code-review', 'issue', `Issue ${index + 1}: ${issue}`);
@@ -1812,7 +1900,15 @@ async function runBuildFromCoding(aSession: string): Promise<{ aSession: string;
       emit('D', 'testing', 'approval', 'ALL TESTS PASSED');
       setAgent('D', 'done');
     } else {
-      const failures = (signal.failures as string[]) || [];
+      const failures = Array.isArray(signal.failures) ? (signal.failures as string[]) : [];
+      if (failures.length === 0) {
+        const parseError = signal.parseError === true;
+        failures.push(
+          parseError
+            ? 'Tester response was not valid JSON. Provide either {"status":"passed"} or {"status":"failed","failures":["..."]}. If failed, include at least one concrete failure.'
+            : 'Tester did not provide concrete failures. If tests failed, include at least one specific failure.'
+        );
+      }
 
       failures.forEach((failure, index) => {
         emit('D', 'testing', 'failure', `Failure ${index + 1}: ${failure}`);

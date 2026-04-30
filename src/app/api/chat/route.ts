@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
+import { readFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
@@ -26,6 +26,8 @@ import {
 } from '@/lib/pipeline-control';
 import { parseSupervisorIntent } from '@/lib/supervisor-intents';
 import { getProviderDefaultModel } from '@/lib/provider-catalog';
+import { mutateJsonStateLocked } from '@/lib/locked-json-state';
+import { authorizeLocalOrTokenRequest } from '@/lib/skill-runtime';
 
 const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 const BUILDS_DIR = join(homedir(), 'Builds');
@@ -40,6 +42,8 @@ const ROLE_FILES: Record<string, string> = {
   E: join(BUILDUI_DIR, 'role-e.md'),
   S: join(BUILDUI_DIR, 'role-s.md'),
 };
+
+const MAX_EVENT_HISTORY = 3000;
 
 const MANUAL_PROMPTS: Record<string, string> = {
   A: 'You specialize in software planning and architecture.',
@@ -116,7 +120,7 @@ function getManualState(): Record<string, unknown> {
     runtime: { ...EMPTY_RUNTIME },
     events: [],
   };
-  writeFileSync(eventsFile, JSON.stringify(fresh, null, 2));
+  writeMergedState(eventsFile, fresh);
   return fresh;
 }
 
@@ -139,7 +143,7 @@ function getStagingState(): Record<string, unknown> {
     runtime: { ...EMPTY_RUNTIME },
     events: [],
   };
-  writeFileSync(eventsFile, JSON.stringify(fresh, null, 2));
+  writeMergedState(eventsFile, fresh);
   return fresh;
 }
 
@@ -179,8 +183,133 @@ function findLatestProject(): string | null {
   } catch { return null; }
 }
 
+function normalizeEvents(events: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(events)
+    ? events.filter((event): event is Record<string, unknown> => !!event && typeof event === 'object')
+    : [];
+}
+
+function mergeEvents(
+  currentEvents: Array<Record<string, unknown>>,
+  incomingEvents: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const merged: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const event of [...currentEvents, ...incomingEvents]) {
+    const key = [
+      String(event.time || ''),
+      String(event.agent || ''),
+      String(event.phase || ''),
+      String(event.type || ''),
+      String(event.text || ''),
+      String(event.detail || ''),
+    ].join('::');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(event);
+  }
+  merged.sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+  return merged.length > MAX_EVENT_HISTORY ? merged.slice(-MAX_EVENT_HISTORY) : merged;
+}
+
+function latestEventTime(events: Array<Record<string, unknown>>): number {
+  let latest = 0;
+  for (const event of events) {
+    const raw = String(event.time || '');
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
+  }
+  return latest;
+}
+
+function writeMergedState(file: string, state: Record<string, unknown>) {
+  mutateJsonStateLocked(
+    file,
+    (current) => {
+      const currentRecord = current as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...currentRecord };
+      const currentEvents = normalizeEvents(currentRecord.events);
+      const incomingEvents = normalizeEvents(state.events);
+      const currentLatest = latestEventTime(currentEvents);
+      const incomingLatest = latestEventTime(incomingEvents);
+      const incomingIsNewerOrEqual = incomingLatest >= currentLatest;
+
+      if (typeof state.concept === 'string' && (incomingIsNewerOrEqual || !String(currentRecord.concept || '').trim())) {
+        next.concept = state.concept;
+      }
+      if (typeof state.selectedModel === 'string' && (incomingIsNewerOrEqual || !String(currentRecord.selectedModel || '').trim())) {
+        next.selectedModel = state.selectedModel;
+      }
+      if (typeof state.selectedProvider === 'string' && (incomingIsNewerOrEqual || !String(currentRecord.selectedProvider || '').trim())) {
+        next.selectedProvider = state.selectedProvider;
+      }
+      if (typeof state.requestedWorkingDir === 'string' && (incomingIsNewerOrEqual || !String(currentRecord.requestedWorkingDir || '').trim())) {
+        next.requestedWorkingDir = state.requestedWorkingDir;
+      }
+
+      if (state.agentModels && typeof state.agentModels === 'object') {
+        next.agentModels = {
+          ...(currentRecord.agentModels as Record<string, unknown> | undefined),
+          ...(state.agentModels as Record<string, unknown>),
+        };
+      }
+
+      if (state.sessions && typeof state.sessions === 'object') {
+        const currentSessions = currentRecord.sessions && typeof currentRecord.sessions === 'object'
+          ? currentRecord.sessions as Record<string, unknown>
+          : {};
+        const incomingSessions = state.sessions as Record<string, unknown>;
+        const mergedSessions: Record<string, unknown> = { ...currentSessions };
+        for (const [agentId, incoming] of Object.entries(incomingSessions)) {
+          const incomingSession = String(incoming || '').trim();
+          if (!incomingSession) continue;
+          const currentSession = String(mergedSessions[agentId] || '').trim();
+          if (!currentSession || incomingIsNewerOrEqual) {
+            mergedSessions[agentId] = incomingSession;
+          }
+        }
+        next.sessions = mergedSessions;
+      }
+
+      if (state.agentStatus && typeof state.agentStatus === 'object') {
+        const currentStatuses = currentRecord.agentStatus && typeof currentRecord.agentStatus === 'object'
+          ? currentRecord.agentStatus as Record<string, unknown>
+          : {};
+        const incomingStatuses = state.agentStatus as Record<string, unknown>;
+        const mergedStatuses: Record<string, unknown> = { ...currentStatuses };
+        for (const [agentId, incoming] of Object.entries(incomingStatuses)) {
+          const incomingStatus = String(incoming || '');
+          const currentStatus = String(mergedStatuses[agentId] || '');
+          if (!currentStatus || incomingStatus === 'active' || incomingStatus === 'working' || incomingIsNewerOrEqual) {
+            mergedStatuses[agentId] = incomingStatus;
+          }
+        }
+        next.agentStatus = mergedStatuses;
+      }
+
+      if (state.usage && typeof state.usage === 'object') {
+        const currentUsage = currentRecord.usage && typeof currentRecord.usage === 'object'
+          ? currentRecord.usage as Record<string, unknown>
+          : {};
+        const incomingUsage = state.usage as Record<string, unknown>;
+        const keys = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'totalCostUsd'];
+        const mergedUsage: Record<string, number> = {};
+        for (const key of keys) {
+          mergedUsage[key] = Math.max(Number(currentUsage[key] || 0), Number(incomingUsage[key] || 0));
+        }
+        next.usage = mergedUsage;
+      }
+
+      next.events = mergeEvents(currentEvents, incomingEvents);
+
+      Object.assign(currentRecord, next);
+    },
+    { createIfMissing: () => ({ ...state }) }
+  );
+}
+
 function writeState(file: string, state: Record<string, unknown>) {
-  writeFileSync(file, JSON.stringify(state, null, 2));
+  writeMergedState(file, state);
 }
 
 function appendUserEvent(state: Record<string, unknown>, agent: string, message: string) {
@@ -250,7 +379,7 @@ function streamClaude(
           type: 'status',
           text: `Running ${roleLabel(agent)} in isolated Docker worker.`,
         });
-        writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        writeMergedState(eventsFile, s as Record<string, unknown>);
       } catch {}
     }
 
@@ -281,7 +410,7 @@ function streamClaude(
             const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
             if (!s.sessions) s.sessions = {};
             s.sessions[agent] = streamedSessionId;
-            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+            writeMergedState(eventsFile, s as Record<string, unknown>);
           } catch {}
         }
       }
@@ -304,7 +433,7 @@ function streamClaude(
             try {
               const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
               s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'tool_call', text: desc });
-              writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+              writeMergedState(eventsFile, s as Record<string, unknown>);
             } catch {}
           } else if (block.type === 'text') {
             const text = ((block.text as string) || '').trim();
@@ -312,7 +441,7 @@ function streamClaude(
               try {
                 const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
                 s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'text', text });
-                writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+                writeMergedState(eventsFile, s as Record<string, unknown>);
               } catch {}
             }
           }
@@ -333,7 +462,7 @@ function streamClaude(
           }
           const cost = event.total_cost_usd as number;
           if (cost && s.usage) s.usage.totalCostUsd = (s.usage.totalCostUsd || 0) + cost;
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
       }
     });
@@ -365,7 +494,7 @@ function streamClaude(
             type: 'text',
             text: `I could not keep the ${roleLabel(agent)} isolated for this turn because Claude subscription auth is unavailable in Docker right now, so I am retrying it on the host instead of failing the run.`,
           });
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
 
         resolveResponse(await streamClaude(
@@ -381,7 +510,7 @@ function streamClaude(
       try {
         const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
         if (s.agentStatus) s.agentStatus[agent] = 'idle';
-        writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        writeMergedState(eventsFile, s as Record<string, unknown>);
       } catch {}
       resolveResponse(NextResponse.json({ success: true, sessionId: newSessionId }));
     });
@@ -463,7 +592,7 @@ function streamOpenCode(
           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
           if (!s.sessions) s.sessions = {};
           s.sessions[agent] = streamedSessionId;
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
       }
 
@@ -476,7 +605,7 @@ function streamOpenCode(
           try {
             const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
             s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'text', text });
-            writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+            writeMergedState(eventsFile, s as Record<string, unknown>);
           } catch {}
         }
       } else if (lowerType.includes('tool')) {
@@ -485,13 +614,13 @@ function streamOpenCode(
         try {
           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
           s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'tool_call', text });
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
       } else if (lowerType === 'step_start') {
         try {
           const s = JSON.parse(readFileSync(eventsFile, 'utf8'));
           s.events.push({ time: new Date().toISOString(), agent, phase: s.currentPhase || 'concept', type: 'status', text: 'OpenCode started a step.' });
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
       } else if (lowerType === 'step_finish') {
         const tokens = (part.tokens as {
@@ -513,7 +642,7 @@ function streamOpenCode(
             s.usage.cacheWriteTokens = (s.usage.cacheWriteTokens || 0) + Number(tokens.cacheWrite || tokens.cache?.write || 0);
             s.usage.totalCostUsd = (s.usage.totalCostUsd || 0) + cost;
           }
-          writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+          writeMergedState(eventsFile, s as Record<string, unknown>);
         } catch {}
       }
     });
@@ -541,7 +670,7 @@ function streamOpenCode(
             text: `OpenCode exited with code ${exitCode ?? 'unknown'}${exitSignal ? ` (${exitSignal})` : ''}`,
           });
         }
-        writeFileSync(eventsFile, JSON.stringify(s, null, 2));
+        writeMergedState(eventsFile, s as Record<string, unknown>);
       } catch {}
 
       if (stderr.trim()) {
@@ -603,7 +732,7 @@ function handleManual(
     events.push({ time: new Date().toISOString(), agent, phase: 'concept', type: 'user_msg', text: `You: ${message}` });
   }
   state.events = events;
-  writeFileSync(eventsFile, JSON.stringify(state, null, 2));
+  writeMergedState(eventsFile, state);
 
   const safeMessage = message.startsWith('-') ? 'User says: ' + message : message;
   const guardedMessage = [buildWorkspaceGuard(manualProjectDir), '', safeMessage].join('\n\n');
@@ -698,6 +827,32 @@ function handlePipeline(
   );
   const workspaceDir = resolveWorkingDirectory(workingDir, projectDir);
   const supervisorIntent = agent === 'S' ? parseSupervisorIntent(message) : null;
+  const activeAgent = String(state.activeAgent || '').trim();
+
+  if (pipelineStatus === 'running' && activeAgent) {
+    const allowedSupervisorActions = new Set([
+      'set-stop-after-review',
+      'resume-run',
+      'stop-run',
+    ]);
+    const isAllowedSupervisorAction =
+      agent === 'S' &&
+      (looksLikeStatusQuestion(message) || (
+        !!supervisorIntent &&
+        allowedSupervisorActions.has(supervisorIntent.action)
+      ));
+
+    if (!isAllowedSupervisorAction) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Pipeline is currently active with agent ${activeAgent}. Wait for this turn to finish or queue the message from the UI.`,
+          activeAgent,
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   if (agent === 'S') {
     if (!supervisorIntent && projectDir !== STAGING_DIR && pipelineStatus !== 'running') {
@@ -846,6 +1001,14 @@ function handlePipeline(
 
       if (supervisorIntent.action === 'stop-run') {
         const result = stopPipelineRun(controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
+        if (!result.success) {
+          appendSupervisorFailureAndGuidance(
+            controlState,
+            controlEventsFile,
+            result.error || 'Supervisor could not stop the run'
+          );
+          return NextResponse.json({ success: false, error: result.error || 'Could not stop pipeline' }, { status: 409 });
+        }
         appendPipelineEvent(result.projectDir || controlProjectDir, {
           agent: 'S',
           phase: String(controlState.currentPhase || 'concept'),
@@ -972,6 +1135,11 @@ function handlePipeline(
 // ── Route handler ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const auth = authorizeLocalOrTokenRequest(req, 'chat endpoint');
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message || 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await req.json();
   const {
     agent,

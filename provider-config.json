@@ -1,8 +1,8 @@
 {
   "lm-studio": {
     "id": "lm-studio",
-    "host": "10.2.0.90",
-    "port": 1234,
+    "host": "localhost",
+    "port": 8080,
     "baseUrl": "http://10.2.0.90:1234"
   },
   "ollama": {
