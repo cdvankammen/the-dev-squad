@@ -1,0 +1,146 @@
+[
+  {
+    "id": "Read",
+    "aliases": ["read", "file.read", "read_file", "readfile", "view_file", "cat"],
+    "description": "Read the contents of a file. Use this to examine source code, configuration, documentation, or any text file.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Absolute or relative path to the file to read."
+        }
+      },
+      "required": ["file_path"]
+    },
+    "safety": "read"
+  },
+  {
+    "id": "Write",
+    "aliases": ["write", "file.write", "write_file", "writefile", "create_file", "save_file"],
+    "description": "Write content to a file, creating it if necessary. Use this to create new files or completely replace existing file content.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Path to the file to write."
+        },
+        "content": {
+          "type": "string",
+          "description": "The full content to write to the file."
+        }
+      },
+      "required": ["file_path", "content"]
+    },
+    "safety": "write"
+  },
+  {
+    "id": "Edit",
+    "aliases": ["edit", "file.edit", "replace", "patch", "modify", "update_file"],
+    "description": "Make a targeted edit to a file by replacing an exact string with a new string. The old_string must match exactly (including whitespace).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Path to the file to edit."
+        },
+        "old_string": {
+          "type": "string",
+          "description": "The exact text to find and replace."
+        },
+        "new_string": {
+          "type": "string",
+          "description": "The replacement text."
+        }
+      },
+      "required": ["file_path", "old_string", "new_string"]
+    },
+    "safety": "write"
+  },
+  {
+    "id": "Bash",
+    "aliases": ["bash", "sh", "shell", "run", "command", "execute", "terminal"],
+    "description": "Run a shell command. Use this for installing packages, running tests, checking file structure, git operations, and diagnostics.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "The shell command to execute."
+        }
+      },
+      "required": ["command"]
+    },
+    "safety": "execute"
+  },
+  {
+    "id": "Glob",
+    "aliases": ["glob", "find", "ls", "list", "list_files", "file_search", "filesearch"],
+    "description": "Find files matching a glob pattern.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern to match files (for example, src/**/*.ts)."
+        }
+      },
+      "required": ["pattern"]
+    },
+    "safety": "read"
+  },
+  {
+    "id": "Grep",
+    "aliases": ["grep", "rg", "ripgrep", "search", "search_files", "grep_search", "text_search"],
+    "description": "Search for a pattern in files.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "The text or regex pattern to search for."
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory or file path to search in. Defaults to the current directory."
+        }
+      },
+      "required": ["pattern"]
+    },
+    "safety": "read"
+  },
+  {
+    "id": "WebSearch",
+    "aliases": ["websearch", "web_search", "web-search", "searchweb", "internet_search", "search_online"],
+    "description": "Search the public web for current documentation, APIs, library usage, and reference material.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query text."
+        }
+      },
+      "required": ["query"]
+    },
+    "safety": "network"
+  },
+  {
+    "id": "WebFetch",
+    "aliases": ["webfetch", "web_fetch", "web-fetch", "fetch", "fetch_url", "http_get", "http-get", "get_url", "request_url"],
+    "description": "Fetch the contents of a public URL for source verification or documentation lookup.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Public URL to fetch."
+        }
+      },
+      "required": ["url"]
+    },
+    "safety": "network"
+  }
+]
