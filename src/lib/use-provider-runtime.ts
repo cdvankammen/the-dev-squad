@@ -45,6 +45,8 @@ export interface UseProviderRuntimeOptions {
   defaultWorkingDir?: string;
 }
 
+const AGENT_ORDER: AgentId[] = ['S', 'A', 'B', 'C', 'D', 'E'];
+
 function normalizePort(value: string): number | undefined {
   const trimmed = String(value || '').trim();
   if (!trimmed) return undefined;
@@ -103,22 +105,46 @@ export function useProviderRuntime({
       const res = await fetch(`/api/models?provider=${encodeURIComponent(resolvedProvider)}`);
       if (!res.ok) return;
       const data = await res.json();
+      const nextModels = Array.isArray(data?.models) ? (data.models as ProviderModelSummary[]) : [];
+      const modelIds = new Set(nextModels.map((model) => String(model.id || '').trim()).filter(Boolean));
+
       if (Array.isArray(data?.models)) {
-        setModels(data.models as ProviderModelSummary[]);
+        setModels(nextModels);
       } else {
         setModels([]);
       }
+
       const nextDefault = String(data?.defaultModel || data?.provider?.defaultModel || '').trim();
       const stored = readModelSelection(resolvedProvider, '');
-      if (stored) {
-        setSelectedModelState(stored);
-      } else if (nextDefault) {
-        setSelectedModelState(nextDefault);
-      }
+      const current = String(selectedModel || '').trim();
+      const firstAvailable = nextModels[0]?.id ? String(nextModels[0].id) : '';
+
+      const nextSelected =
+        (stored && modelIds.has(stored) && stored) ||
+        (current && modelIds.has(current) && current) ||
+        (nextDefault && modelIds.has(nextDefault) && nextDefault) ||
+        firstAvailable ||
+        stored ||
+        nextDefault ||
+        defaultModel ||
+        '';
+
+      setSelectedModelState(nextSelected);
+
+      const storedOverrides = readAgentModelOverrides(resolvedProvider) as Partial<Record<AgentId, string>>;
+      setAgentModelsState((prev) => {
+        const merged = { ...prev, ...storedOverrides } as Partial<Record<AgentId, string>>;
+        const normalized: Partial<Record<AgentId, string>> = { ...merged };
+        for (const agent of AGENT_ORDER) {
+          const value = String(merged[agent] || '').trim();
+          normalized[agent] = value && modelIds.has(value) ? value : '';
+        }
+        return normalized;
+      });
     } catch {
       setModels([]);
     }
-  }, [selectedProvider]);
+  }, [defaultModel, selectedModel, selectedProvider]);
 
   useEffect(() => {
     const storedProvider = readProviderSelection(defaultProvider);
@@ -163,7 +189,7 @@ export function useProviderRuntime({
       apiKey: providerApiKey,
       workingDir: selectedWorkingDir,
     });
-    for (const agent of ['S', 'A', 'B', 'C', 'D', 'E'] as AgentId[]) {
+    for (const agent of AGENT_ORDER) {
       writeAgentModelOverride(selectedProvider, agent, agentModels[agent]);
     }
 

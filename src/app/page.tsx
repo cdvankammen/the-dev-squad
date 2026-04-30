@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/shared/Badge';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
@@ -10,6 +10,7 @@ import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
+import { useProviderRuntime } from '@/lib/use-provider-runtime';
 
 const AGENT_NAMES: Record<AgentId, string> = {
   A: 'Planner', B: 'Reviewer', C: 'Coder', D: 'Tester', E: 'Security Auditor', S: 'Supervisor',
@@ -36,9 +37,39 @@ const PHASE_PROGRESS: Record<string, number> = {
   deploy: 95, complete: 100,
 };
 
+function progressWidthClass(progress: number): string {
+  switch (progress) {
+    case 5: return 'w-[5%]';
+    case 20: return 'w-[20%]';
+    case 35: return 'w-[35%]';
+    case 55: return 'w-[55%]';
+    case 70: return 'w-[70%]';
+    case 85: return 'w-[85%]';
+    case 90: return 'w-[90%]';
+    case 95: return 'w-[95%]';
+    case 100: return 'w-full';
+    default: return 'w-0';
+  }
+}
+
+function toggleButtonClass(active: boolean, activeBgClass: string): string {
+  return `px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${active ? `${activeBgClass} text-white` : 'text-[#555] hover:text-[#888]'}`;
+}
+
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Opus 4.6' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+];
+
+const PROVIDER_OPTIONS = [
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'lm-studio', label: 'LM Studio' },
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'openwebui', label: 'Open WebUI' },
+  { value: 'openai-compat', label: 'OpenAI-Compatible' },
+  { value: 'claude-code-router', label: 'Claude Code Router' },
+  { value: 'openclaude-code', label: 'OpenClaude Code' },
+  { value: 'opencode', label: 'OpenCode' },
 ];
 
 const MANUAL_ROLES: Record<string, string> = {
@@ -50,22 +81,52 @@ const MANUAL_ROLES: Record<string, string> = {
   S: 'Oversight & diagnostics',
 };
 
+type QueueMessage = {
+  id: string;
+  text: string;
+  isEditing?: boolean;
+};
+
 export default function PipelinePage() {
   const [mode, setMode] = useState<AppMode>('pipeline');
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [selectedSecurityMode, setSelectedSecurityMode] = useState<SecurityMode>('fast');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>('auto');
   const [selectedRunGoal, setSelectedRunGoal] = useState<RunGoal>('full-build');
   const [selectedRunFinalAudit, setSelectedRunFinalAudit] = useState<boolean>(false);
 
   const {
+    providers,
+    models,
+    selectedProvider,
+    setSelectedProvider,
+    providerMode,
+    selectedModel,
+    setSelectedModel,
+    selectedWorkingDir,
+    setSelectedWorkingDir,
+    providerHost,
+    setProviderHost,
+    providerPort,
+    setProviderPort,
+    providerBaseUrl,
+    setProviderBaseUrl,
+    providerApiKey,
+    setProviderApiKey,
+    agentModels,
+    setAgentModel,
+    refreshModels,
+  } = useProviderRuntime({ defaultProvider: 'claude', defaultModel: 'claude-sonnet-4-6' });
+
+  const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel });
+  } = usePipelineState({ pollInterval: 400, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
+  const [supervisorQueue, setSupervisorQueue] = useState<QueueMessage[]>([]);
   const [sendingAgents, setSendingAgents] = useState<Set<AgentId>>(new Set());
+  const [queueDispatching, setQueueDispatching] = useState(false);
   const [pipelineStarted, setPipelineStarted] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -86,6 +147,26 @@ export default function PipelinePage() {
   const pipelineRunning = isPipeline && (state.pipelineStatus === 'running' || (!state.buildComplete && (pipelineStarted || hasLivePipelineActivity)));
   const pipelinePaused = isPipeline && state.pipelineStatus === 'paused';
   const pipelineFailed = isPipeline && state.pipelineStatus === 'failed';
+  const providerOptions = providers.length > 0
+    ? providers
+    : PROVIDER_OPTIONS.map((opt) => ({
+        id: opt.value,
+        label: opt.label,
+        description: '',
+        defaultModel: '',
+        mode: opt.value === 'claude' ? 'claude-code-cli' : opt.value === 'opencode' ? 'opencode-cli' : 'openai-compat-http',
+        config: { host: '', port: 0, baseUrl: '', apiKey: '', enabled: true },
+      }));
+  const modelOptions = models.length > 0
+    ? models
+    : MODEL_OPTIONS.map((opt) => ({
+        id: opt.value,
+        label: opt.label,
+        providerId: selectedProvider,
+        source: 'static',
+      }));
+  const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
+  const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
 
   // Auto-scroll: all panels, expanded modal, and live feed
   useEffect(() => {
@@ -156,18 +237,77 @@ export default function PipelinePage() {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleSend() {
-    if (sendingAgents.has('S') || !chatInput.trim()) return;
+  const dispatchSupervisorMessage = useCallback(async (message: string) => {
     setSendingAgents(prev => new Set([...prev, 'S']));
-    await sendChat('S', chatInput.trim(), isPipeline ? {
-      securityMode: selectedSecurityMode,
-      permissionMode: selectedPermissionMode,
-      runGoal: selectedRunGoal,
-      runFinalAudit: selectedRunFinalAudit,
-    } : undefined);
+    try {
+      await sendChat('S', message, isPipeline ? {
+        securityMode: selectedSecurityMode,
+        permissionMode: selectedPermissionMode,
+        runGoal: selectedRunGoal,
+        runFinalAudit: selectedRunFinalAudit,
+      } : undefined);
+    } finally {
+      setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    }
+  }, [isPipeline, selectedPermissionMode, selectedRunFinalAudit, selectedRunGoal, selectedSecurityMode, sendChat]);
+
+  async function handleSend() {
+    const message = chatInput.trim();
+    if (!message) return;
+    if (sendingAgents.has('S')) {
+      setSupervisorQueue((prev) => [...prev, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text: message, isEditing: false }]);
+      setChatInput('');
+      return;
+    }
     setChatInput('');
-    setSendingAgents(prev => { const n = new Set(prev); n.delete('S'); return n; });
+    await dispatchSupervisorMessage(message);
   }
+
+  async function handleSendQueuedSupervisorMessage(itemId: string) {
+    const queued = supervisorQueue.find((item) => item.id === itemId);
+    if (!queued || sendingAgents.has('S') || queueDispatching) return;
+    setQueueDispatching(true);
+    try {
+      await dispatchSupervisorMessage(queued.text);
+      setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
+    } finally {
+      setQueueDispatching(false);
+    }
+  }
+
+  function updateSupervisorQueueItem(itemId: string, text: string) {
+    setSupervisorQueue((prev) => prev.map((item) => (item.id === itemId ? { ...item, text } : item)));
+  }
+
+  function setSupervisorQueueEditing(itemId: string, isEditing: boolean) {
+    setSupervisorQueue((prev) => prev.map((item) => (item.id === itemId ? { ...item, isEditing } : item)));
+  }
+
+  function removeSupervisorQueueItem(itemId: string) {
+    setSupervisorQueue((prev) => prev.filter((item) => item.id !== itemId));
+  }
+
+  useEffect(() => {
+    if (queueDispatching || sendingAgents.has('S')) return;
+    const nextQueued = supervisorQueue[0];
+    if (!nextQueued) return;
+    if (nextQueued.isEditing) return;
+
+    const queuedText = nextQueued.text.trim();
+    if (!queuedText) {
+      setSupervisorQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+      return;
+    }
+
+    setQueueDispatching(true);
+    void dispatchSupervisorMessage(queuedText)
+      .then(() => {
+        setSupervisorQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+      })
+      .finally(() => {
+        setQueueDispatching(false);
+      });
+  }, [dispatchSupervisorMessage, queueDispatching, sendingAgents, supervisorQueue]);
 
   async function handleStartPipeline() {
     completionNotifiedRef.current = false;
@@ -333,9 +473,9 @@ export default function PipelinePage() {
   return (
     <div className="p-4 space-y-4">
       {/* Hero: Animation + Feed (65%) + Dashboard (35%) */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '65% 1fr' }}>
+      <div className="grid grid-cols-[65%_1fr] gap-4">
         {/* Office Scene + Live Feed below it — height driven by dashboard */}
-        <div className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]" style={{ height: 0, minHeight: '100%' }}>
+        <div className="flex h-0 min-h-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(24,18,33,0.96),rgba(11,10,16,0.98))]">
           <div className="p-2">
             <LunarOfficeScene
               activePhase={phase}
@@ -409,27 +549,88 @@ export default function PipelinePage() {
               <div className="flex rounded-lg border border-white/10 bg-white/5">
                 <button
                   onClick={() => setMode('pipeline')}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${isPipeline ? 'bg-violet-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                  style={{ borderRadius: '7px 0 0 7px' }}
+                  className={`${toggleButtonClass(isPipeline, 'bg-violet-600')} rounded-l-md`}
                 >Pipeline</button>
                 <button
                   onClick={() => setMode('manual')}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all ${!isPipeline ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                  style={{ borderRadius: '0 7px 7px 0' }}
+                  className={`${toggleButtonClass(!isPipeline, 'bg-blue-600')} rounded-r-md`}
                 >Manual</button>
               </div>
-              {/* Model Picker — manual mode only */}
-              {!isPipeline && (
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 <select
+                  title="Provider"
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
+                >
+                  {providerOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
+                  ))}
+                </select>
+                <select
+                  title="Model"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 focus:border-blue-600 focus:outline-none"
                 >
-                  {MODEL_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value} className="bg-[#1a1a2a]">{opt.label}</option>
+                  {modelOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
                   ))}
                 </select>
+                <input
+                  title="Working directory"
+                  value={selectedWorkingDir}
+                  onChange={(e) => setSelectedWorkingDir(e.target.value)}
+                  placeholder="~/Builds/project-root"
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+              {showHttpSettings && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                  <input
+                    title="Host"
+                    value={providerHost}
+                    onChange={(e) => setProviderHost(e.target.value)}
+                    placeholder="127.0.0.1"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="Port"
+                    value={providerPort}
+                    onChange={(e) => setProviderPort(e.target.value)}
+                    placeholder="1234"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="Base URL"
+                    value={providerBaseUrl}
+                    onChange={(e) => setProviderBaseUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:1234"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                  <input
+                    title="API Key"
+                    value={providerApiKey}
+                    onChange={(e) => setProviderApiKey(e.target.value)}
+                    placeholder="optional"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
               )}
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshModels(selectedProvider)}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  Refresh Models
+                </button>
+                <span className="text-[10px] text-slate-500">
+                  {selectedProviderDefinition?.mode === 'openai-compat-http'
+                    ? 'Connection settings are saved for this provider and used for dynamic model discovery.'
+                    : 'CLI-style providers use the local runtime and their discovered models are loaded automatically.'}
+                </span>
+              </div>
             </div>
             <div className={`mt-3 rounded-xl border px-3 py-3 ${
               modePosture.tone === 'warning'
@@ -453,14 +654,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedSecurityMode('fast')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedSecurityMode === 'fast' ? 'bg-emerald-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedSecurityMode === 'fast', 'bg-emerald-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Fast</button>
                     <button
                       onClick={() => setSelectedSecurityMode('strict')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedSecurityMode === 'strict' ? 'bg-amber-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedSecurityMode === 'strict', 'bg-amber-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Strict</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -479,19 +678,17 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedPermissionMode('auto')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'auto' ? 'bg-emerald-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'auto', 'bg-emerald-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Auto</button>
                     <button
                       onClick={() => setSelectedPermissionMode('plan')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'plan' ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'plan', 'bg-blue-600')} disabled:cursor-not-allowed disabled:opacity-50`}
                     >Plan</button>
                     <button
                       onClick={() => setSelectedPermissionMode('dangerously-skip-permissions')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedPermissionMode === 'dangerously-skip-permissions' ? 'bg-red-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedPermissionMode === 'dangerously-skip-permissions', 'bg-red-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Skip</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -512,14 +709,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedRunGoal('full-build')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunGoal === 'full-build' ? 'bg-blue-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(selectedRunGoal === 'full-build', 'bg-blue-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Full Build</button>
                     <button
                       onClick={() => setSelectedRunGoal('plan-only')}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunGoal === 'plan-only' ? 'bg-violet-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedRunGoal === 'plan-only', 'bg-violet-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Plan Only</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -538,14 +733,12 @@ export default function PipelinePage() {
                     <button
                       onClick={() => setSelectedRunFinalAudit(false)}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${!selectedRunFinalAudit ? 'bg-slate-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '7px 0 0 7px' }}
+                      className={`${toggleButtonClass(!selectedRunFinalAudit, 'bg-slate-600')} rounded-l-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >Off</button>
                     <button
                       onClick={() => setSelectedRunFinalAudit(true)}
                       disabled={securityModeLocked}
-                      className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all disabled:cursor-not-allowed disabled:opacity-50 ${selectedRunFinalAudit ? 'bg-rose-600 text-white' : 'text-[#555] hover:text-[#888]'}`}
-                      style={{ borderRadius: '0 7px 7px 0' }}
+                      className={`${toggleButtonClass(selectedRunFinalAudit, 'bg-rose-600')} rounded-r-md disabled:cursor-not-allowed disabled:opacity-50`}
                     >On</button>
                   </div>
                   <span className="text-[10px] text-slate-500">
@@ -602,7 +795,7 @@ export default function PipelinePage() {
                   <span>{progress}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
-                  <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-all duration-700" style={{ width: `${progress}%` }} />
+                  <div className={`h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-all duration-700 ${progressWidthClass(progress)}`} />
                 </div>
               </div>
             </>
@@ -628,7 +821,7 @@ export default function PipelinePage() {
                         : status === 'done'
                         ? 'border-red-500 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
                         : 'border-[#252530] text-[#444]'
-                    }`} style={{ background: '#0e0e16' }}>{id}</div>
+                    } bg-[#0e0e16]`}>{id}</div>
                     <span className="text-[9px] text-slate-500">{AGENT_NAMES[id]}</span>
                     <span className={`text-[8px] font-bold uppercase ${isActive ? 'text-emerald-400' : status === 'done' ? 'text-red-400' : 'text-[#333]'}`}>{status}</span>
                   </div>
@@ -805,21 +998,16 @@ export default function PipelinePage() {
           When the security audit starts, E is added on the right (same size as S)
           and the center columns squish to accommodate. */}
       <div
-        className="grid gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a]"
-        style={{
-          gridTemplateColumns: auditHasStarted ? '25% 1fr 1fr 25%' : '30% 1fr 1fr',
-          gridTemplateRows: '1fr 1fr',
-          height: '100vh',
-        }}
+        className={`grid h-screen grid-rows-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2a] ${auditHasStarted ? 'lg:[grid-template-columns:25%_1fr_1fr_25%]' : 'lg:[grid-template-columns:30%_1fr_1fr]'}`}
       >
         {/* S — Supervisor, spans both rows */}
-          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18]" style={{ gridRow: '1 / -1' }} onClick={() => setSelectedAgent('S')}>
+          <div className="flex cursor-pointer flex-col overflow-hidden bg-[#0c0c18] row-span-2" onClick={() => setSelectedAgent('S')}>
             <div className="flex items-center gap-3 border-b-2 border-emerald-600 px-3.5 py-2.5">
             <div className={`flex h-9 w-9 items-center justify-center rounded-[10px] border-2 text-sm font-bold transition-all ${
               (state.agentStatus.S === 'active' || state.agentStatus.S === 'working')
                 ? 'border-emerald-500 text-emerald-400 shadow-[0_0_16px_rgba(34,197,94,0.25)]'
                 : 'border-[#252530] text-[#444]'
-            }`} style={{ background: '#0e0e16' }}>S</div>
+            } bg-[#0e0e16]`}>S</div>
             <div>
               <div className="text-[13px] font-semibold text-[#999]">Supervisor</div>
               <div className="text-[10px] text-[#444]">{isPipeline ? 'Recommended front door. Direct specialist chat still works.' : 'Oversight & diagnostics'}</div>
@@ -888,13 +1076,47 @@ export default function PipelinePage() {
                       ? `Ask the supervisor anything, or try "${supervisorRecommendation.chatCommand}"`
                       : 'Ask the supervisor anything, or chat with any specialist directly...')
                   : 'Chat with the Supervisor'}
-                disabled={sendingAgents.has('S')}
                 className="max-h-40 flex-1 rounded-lg border border-[#252530] bg-[#14141e] px-3 py-2 text-sm text-white placeholder-[#444] focus:border-emerald-600 focus:outline-none disabled:opacity-30"
               />
-              <button onClick={handleSend} disabled={sendingAgents.has('S') || !chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
+              <button onClick={handleSend} disabled={!chatInput.trim()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-30">
                 Send
               </button>
             </div>
+            {supervisorQueue.length > 0 && (
+              <div className="mt-2 space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Pending queue (auto-send when ready)</div>
+                {supervisorQueue.map((item, index) => (
+                  <div key={item.id} className="rounded-md border border-white/10 bg-[#10101a] p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-slate-500">
+                      <span>Queued #{index + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleSendQueuedSupervisorMessage(item.id)}
+                          className="rounded bg-emerald-600 px-2 py-1 text-[9px] font-semibold text-white hover:bg-emerald-500"
+                        >
+                          Send
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSupervisorQueueItem(item.id)}
+                          className="rounded bg-white/10 px-2 py-1 text-[9px] font-semibold text-slate-200 hover:bg-white/15"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <AutoGrowTextarea
+                      value={item.text}
+                      onChange={(e) => updateSupervisorQueueItem(item.id, e.target.value)}
+                      onFocus={() => setSupervisorQueueEditing(item.id, true)}
+                      onBlur={() => setSupervisorQueueEditing(item.id, false)}
+                      className="min-h-20 w-full rounded-md border border-white/10 bg-[#14141e] px-2 py-1.5 text-xs text-white focus:border-emerald-600 focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -930,15 +1152,27 @@ export default function PipelinePage() {
                     : status === 'done'
                     ? 'border-[#1a1a2a] text-[#333] opacity-50'
                     : 'border-[#252530] text-[#444]'
-                }`} style={{ background: '#0e0e16' }}>{id}</div>
+                } bg-[#0e0e16]`}>{id}</div>
                 <div className="flex-1">
                   <div className="text-[13px] font-semibold text-[#999]">{AGENT_NAMES[id]}</div>
                   <div className="text-[10px] text-[#444]">{AGENT_ROLES[id]}</div>
+                  <select
+                    title={`Model for ${AGENT_NAMES[id]}`}
+                    value={agentModels[id] || selectedModel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setAgentModel(id, e.target.value)}
+                    className="mt-1 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] text-slate-300 focus:outline-none"
+                  >
+                    {modelOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Handoff dropdown — manual mode only, only if agent has text output */}
                   {!isPipeline && hasTextEvents && (
                     <select
+                      title={`Send ${AGENT_NAMES[id]} output to another agent`}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => { if (e.target.value) { handleHandoff(id, e.target.value as AgentId); e.target.value = ''; } }}
                       defaultValue=""
@@ -1049,7 +1283,7 @@ export default function PipelinePage() {
                 (state.agentStatus[expandedAgent] === 'active' || state.agentStatus[expandedAgent] === 'working')
                   ? 'border-emerald-500 text-emerald-400 shadow-[0_0_16px_rgba(34,197,94,0.25)]'
                   : 'border-[#252530] text-[#444]'
-              }`} style={{ background: '#0e0e16' }}>{expandedAgent}</div>
+              } bg-[#0e0e16]`}>{expandedAgent}</div>
               <div className="flex-1">
                 <div className="text-sm font-semibold text-white">{AGENT_NAMES[expandedAgent]}</div>
                 <div className="text-xs text-slate-500">{agentEvents(expandedAgent).length} events</div>
