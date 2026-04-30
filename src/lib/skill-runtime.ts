@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 
 export type SkillMode = 'pipeline' | 'manual';
@@ -13,6 +14,43 @@ export interface SupervisorMessageArgs {
   runGoal?: 'full-build' | 'plan-only';
   runFinalAudit?: boolean;
   agentModels?: Record<string, string>;
+}
+
+export interface SkillAuthResult {
+  ok: boolean;
+  message?: string;
+}
+
+function extractSkillToken(req: NextRequest): string {
+  const auth = String(req.headers.get('authorization') || '').trim();
+  if (auth.toLowerCase().startsWith('bearer ')) {
+    return auth.slice(7).trim();
+  }
+  return String(req.headers.get('x-dev-squad-token') || '').trim();
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
+export function authorizeSkillRequest(req: NextRequest): SkillAuthResult {
+  const expected = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
+  if (!expected) {
+    return { ok: true };
+  }
+
+  const provided = extractSkillToken(req);
+  if (provided && constantTimeEqual(expected, provided)) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    message: 'Unauthorized: missing or invalid token for skill/MCP endpoint',
+  };
 }
 
 export function getRequestOrigin(req: NextRequest): string {

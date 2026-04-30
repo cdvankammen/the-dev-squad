@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  authorizeSkillRequest,
   buildSkillMetadata,
   buildUpdates,
   fetchPipelineState,
@@ -116,6 +117,18 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = authorizeSkillRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32001,
+        message: auth.message || 'Unauthorized',
+      },
+    }, { status: 401 });
+  }
+
   let payload: JsonRpcRequest;
   try {
     payload = (await req.json()) as JsonRpcRequest;

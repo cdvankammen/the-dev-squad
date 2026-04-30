@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  authorizeSkillRequest,
   buildSkillMetadata,
   buildUpdates,
   fetchPipelineState,
@@ -15,6 +16,11 @@ function resolveMode(input: unknown): SkillMode {
 }
 
 export async function GET(req: NextRequest) {
+  const auth = authorizeSkillRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message || 'Unauthorized' }, { status: 401 });
+  }
+
   const action = String(req.nextUrl.searchParams.get('action') || 'describe').trim();
   const mode = resolveMode(req.nextUrl.searchParams.get('mode'));
   const origin = getRequestOrigin(req);
@@ -56,6 +62,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = authorizeSkillRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message || 'Unauthorized' }, { status: 401 });
+  }
+
   let body: Record<string, unknown> = {};
   try {
     body = (await req.json()) as Record<string, unknown>;

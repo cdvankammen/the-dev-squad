@@ -2,6 +2,39 @@
 
 All notable changes to **The Dev Squad** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [SemVer](https://semver.org/) loosely while pre-`v1.0`.
 
+## [Unreleased]
+
+### Added
+
+- **Provider-agnostic pipeline runtime path** for local and hosted providers:
+  - OpenAI-compatible HTTP shim path in `pipeline/runner.ts` + `scripts/http-runner-shim.mjs`.
+  - Dynamic provider/model APIs: `/api/providers`, `/api/models`, `/api/provider-config`.
+  - Provider catalog/config/storage layer: `provider-catalog`, `providerConfig`, `providerStorage`, `use-provider-runtime`.
+- **Per-agent model controls** (S/A/B/C/D/E) in both Office and Squad views, with persisted overrides and provider-scoped memory.
+- **Message queue UX** for agent chat so users can queue and edit outgoing messages while an agent turn is in flight.
+- **Skill/MCP integration layer**:
+  - `/api/skill/dev-squad` and `/api/mcp` supervisor-only control surfaces.
+  - Shared runtime helpers in `src/lib/skill-runtime.ts`.
+  - Health endpoint `/api/health` for quick capability/state checks.
+
+### Changed
+
+- **Pipeline model/provider handoff** now preserves per-agent overrides through chat route → pipeline control → orchestrator execution.
+- **HTTP shim hardening** for non-Claude providers with improved eventing, retry behavior, and JSON/tool-call handling for weaker local models.
+- **Provider selection flow** now supports dynamic model refresh and automatic fallback behavior when selected models are unavailable.
+
+### Fixed
+
+- **Supervisor concept/start race** (`/api/chat`, pipeline mode): sending a concept then immediately `start full build` no longer intermittently fails with `No build concept found yet`.
+- **Staging concept capture behavior**: concept messages now stage reliably even when a previous project state exists but is not actively running.
+- **LM Studio pipeline flow reliability** across multiple model-size combinations (small, medium, large, mixed, sparse overrides) with consistent provider + agent-model persistence.
+
+### Security
+
+- Added optional token protection for skill/MCP control endpoints:
+  - `DEV_SQUAD_API_TOKEN` enables auth checks on `/api/skill/dev-squad` and `/api/mcp`.
+  - Supports `Authorization: Bearer <token>` or `x-dev-squad-token` headers.
+
 ## [v0.4.3] — 2026-04-19
 
 ### Added
@@ -150,6 +183,8 @@ All notable changes to **The Dev Squad** are documented here. Format follows [Ke
 ---
 
 [v0.4.2]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.2
+[v0.4.3]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.3
+[unreleased]: https://github.com/johnkf5-ops/the-dev-squad/compare/v0.4.3...HEAD
 [v0.4.1]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.1
 [v0.4.0]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.4.0
 [v0.3.15]: https://github.com/johnkf5-ops/the-dev-squad/releases/tag/v0.3.15

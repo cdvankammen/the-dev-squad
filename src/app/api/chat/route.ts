@@ -680,6 +680,7 @@ function handlePipeline(
   let state: Record<string, unknown> = {};
   try { state = JSON.parse(readFileSync(eventsFile, 'utf8')); } catch {}
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
+  const pipelineStatus = String(state.pipelineStatus || '').trim();
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
   const pipelineProvider = provider || 'claude';
@@ -696,28 +697,65 @@ function handlePipeline(
     mergedAgentModels,
   );
   const workspaceDir = resolveWorkingDirectory(workingDir, projectDir);
+  const supervisorIntent = agent === 'S' ? parseSupervisorIntent(message) : null;
 
   if (agent === 'S') {
-    const intent = parseSupervisorIntent(message);
-    if (intent) {
+    if (!supervisorIntent && projectDir !== STAGING_DIR && pipelineStatus !== 'running') {
+      const stagedConcept = message.trim();
+      if (stagedConcept) {
+        const stagingState = getStagingState();
+        stagingState.concept = stagedConcept;
+        stagingState.selectedProvider = pipelineProvider;
+        stagingState.selectedModel = pipelineModel;
+        stagingState.requestedWorkingDir = workspaceDir;
+        if (Object.keys(requestedAgentModels).length > 0) {
+          stagingState.agentModels = requestedAgentModels;
+        }
+
+        appendUserEvent(stagingState, agent, message);
+        const reply = buildSupervisorConceptReply(stagedConcept, true);
+        const events = (stagingState.events as Array<Record<string, unknown>>) || [];
+        events.push({
+          time: new Date().toISOString(),
+          agent: 'S',
+          phase: 'concept',
+          type: 'text',
+          text: reply,
+        });
+        stagingState.events = events;
+        writeState(stagingEvents, stagingState);
+
+        return NextResponse.json({
+          success: true,
+          conceptCaptured: true,
+          concept: stagedConcept,
+        });
+      }
+    }
+
+    if (supervisorIntent) {
       let controlProjectDir = projectDir;
       let controlEventsFile = eventsFile;
       let controlState = state;
 
-      if (intent.action === 'start-run') {
+      if (supervisorIntent.action === 'start-run') {
         controlProjectDir = STAGING_DIR;
         controlEventsFile = join(STAGING_DIR, 'pipeline-events.json');
         controlState = getStagingState();
 
-        if (!controlState.concept && typeof intent.concept === 'string' && intent.concept.trim()) {
-          controlState.concept = intent.concept.trim();
+        if (!controlState.concept && typeof supervisorIntent.concept === 'string' && supervisorIntent.concept.trim()) {
+          controlState.concept = supervisorIntent.concept.trim();
+        }
+
+        if (!controlState.concept && projectDir !== STAGING_DIR && typeof state.concept === 'string' && state.concept.trim()) {
+          controlState.concept = state.concept.trim();
         }
       }
 
       appendUserEvent(controlState, agent, message);
       writeState(controlEventsFile, controlState);
 
-      if (intent.action === 'start-run') {
+      if (supervisorIntent.action === 'start-run') {
         const effectiveSecurityMode = defaults?.securityMode || (controlState.securityMode === 'strict' ? 'strict' : 'fast');
         const effectiveRunGoal = defaults?.runGoal || 'full-build';
         const effectivePermissionMode = defaults?.permissionMode || 'auto';
@@ -769,8 +807,8 @@ function handlePipeline(
         });
       }
 
-      if (intent.action === 'set-stop-after-review') {
-        const result = setStopAfterReview(intent.enabled, controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
+      if (supervisorIntent.action === 'set-stop-after-review') {
+        const result = setStopAfterReview(supervisorIntent.enabled, controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
         if (!result.success) {
           appendSupervisorFailureAndGuidance(
             controlState,
@@ -788,7 +826,7 @@ function handlePipeline(
         });
       }
 
-      if (intent.action === 'resume-run') {
+      if (supervisorIntent.action === 'resume-run') {
         const result = resumePipelineRun(controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
         if (!result.success) {
           appendSupervisorFailureAndGuidance(
@@ -806,7 +844,7 @@ function handlePipeline(
         });
       }
 
-      if (intent.action === 'stop-run') {
+      if (supervisorIntent.action === 'stop-run') {
         const result = stopPipelineRun(controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
         appendPipelineEvent(result.projectDir || controlProjectDir, {
           agent: 'S',
