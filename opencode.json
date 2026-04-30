@@ -1,0 +1,46 @@
+{
+  "permission": {
+    "*": "allow"
+  },
+  "mcp": {
+    "memory": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "enabled": true,
+      "environment": {
+        "MEMORY_FILE_PATH": ".autodev/MEMORY.jsonl"
+      }
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true
+    },
+    "sequential-thinking": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "enabled": true
+    },
+    "computer-use-mcp": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "computer-use-mcp"
+      ],
+      "enabled": true
+    }
+  }
+}

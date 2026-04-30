@@ -1,0 +1,51 @@
+{
+  "mcpServers": {
+    "memory": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": ".autodev/MEMORY.jsonl"
+      },
+      "tools": [
+        "*"
+      ]
+    },
+    "playwright": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "sequential-thinking": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "tools": [
+        "*"
+      ]
+    },
+    "computer-use-mcp": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "computer-use-mcp"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

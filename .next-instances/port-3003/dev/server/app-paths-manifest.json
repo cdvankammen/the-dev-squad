@@ -1,0 +1,7 @@
+{
+  "/api/stop-pipeline/route": "app/api/stop-pipeline/route.js",
+  "/api/chat/route": "app/api/chat/route.js",
+  "/api/state/route": "app/api/state/route.js",
+  "/api/providers/route": "app/api/providers/route.js",
+  "/api/models/route": "app/api/models/route.js"
+}

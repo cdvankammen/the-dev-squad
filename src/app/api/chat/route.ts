@@ -25,6 +25,7 @@ import {
   type SecurityMode,
 } from '@/lib/pipeline-control';
 import { parseSupervisorIntent } from '@/lib/supervisor-intents';
+import { getProviderDefaultModel } from '@/lib/provider-catalog';
 
 const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 const BUILDS_DIR = join(homedir(), 'Builds');
@@ -54,6 +55,16 @@ type AgentModelOverrides = Partial<Record<string, string>>;
 function resolveModelForAgent(agent: string, fallbackModel: string, agentModels?: AgentModelOverrides): string {
   const override = String(agentModels?.[agent] || '').trim();
   return override || fallbackModel;
+}
+
+function resolveModelFallbackForProvider(provider: string, requestedModel: string): string {
+  const requested = String(requestedModel || '').trim();
+  if (requested) return requested;
+
+  const providerDefault = String(getProviderDefaultModel(provider) || '').trim();
+  if (providerDefault) return providerDefault;
+
+  return provider === 'claude' ? 'claude-sonnet-4-6' : 'google/gemma-4-e2b';
 }
 
 function normalizeAgentModels(agentModels?: AgentModelOverrides): Record<string, string> {
@@ -570,7 +581,11 @@ function handleManual(
   const sessionId = sessions[agent] || '';
   const manualProjectDir = resolveWorkingDirectory(workingDir, MANUAL_DIR);
   const manualSystemPrompt = MANUAL_PROMPTS[agent] || MANUAL_PROMPTS.A;
-  const selectedModel = resolveModelForAgent(agent, model, agentModels);
+  const selectedModel = resolveModelForAgent(
+    agent,
+    resolveModelFallbackForProvider(provider, model),
+    agentModels,
+  );
 
   // Set agent active
   const agentStatus = (state.agentStatus as Record<string, string>) || {};
@@ -667,11 +682,19 @@ function handlePipeline(
   const securityMode = state.securityMode === 'strict' ? 'strict' : 'fast';
   const sessions = (state.sessions as Record<string, string>) || {};
   const sessionId = sessions[agent] || '';
-  const stateAgentModels = normalizeAgentModels((state.agentModels as AgentModelOverrides | undefined) || undefined);
+  const pipelineProvider = provider || 'claude';
+  const stateProvider = String(state.selectedProvider || '').trim();
+  const canReuseStateAgentModels = stateProvider === pipelineProvider;
+  const stateAgentModels = canReuseStateAgentModels
+    ? normalizeAgentModels((state.agentModels as AgentModelOverrides | undefined) || undefined)
+    : {};
   const requestedAgentModels = normalizeAgentModels(agentModels);
   const mergedAgentModels: AgentModelOverrides = { ...stateAgentModels, ...requestedAgentModels };
-  const pipelineModel = resolveModelForAgent(agent, model || 'claude-opus-4-6', mergedAgentModels);
-  const pipelineProvider = provider || 'claude';
+  const pipelineModel = resolveModelForAgent(
+    agent,
+    resolveModelFallbackForProvider(pipelineProvider, model),
+    mergedAgentModels,
+  );
   const workspaceDir = resolveWorkingDirectory(workingDir, projectDir);
 
   if (agent === 'S') {
@@ -699,8 +722,12 @@ function handlePipeline(
         const effectiveRunGoal = defaults?.runGoal || 'full-build';
         const effectivePermissionMode = defaults?.permissionMode || 'auto';
         const effectiveRunFinalAudit = defaults?.runFinalAudit === true || controlState.runFinalAudit === true;
+        const controlStateProvider = String(controlState.selectedProvider || '').trim();
+        const canReuseControlAgentModels = controlStateProvider === pipelineProvider;
         const controlAgentModels = {
-          ...normalizeAgentModels((controlState.agentModels as AgentModelOverrides | undefined) || undefined),
+          ...(canReuseControlAgentModels
+            ? normalizeAgentModels((controlState.agentModels as AgentModelOverrides | undefined) || undefined)
+            : {}),
           ...requestedAgentModels,
         };
         const result = startPipelineRun({
@@ -708,8 +735,8 @@ function handlePipeline(
           permissionMode: effectivePermissionMode as 'auto' | 'plan' | 'dangerously-skip-permissions',
           runGoal: effectiveRunGoal,
           runFinalAudit: effectiveRunFinalAudit,
-          model: String(controlState.selectedModel || pipelineModel),
-          provider: String(controlState.selectedProvider || pipelineProvider),
+          model: pipelineModel,
+          provider: pipelineProvider,
           workingDir: workspaceDir,
           agentModels: Object.keys(controlAgentModels).length > 0 ? controlAgentModels : undefined,
         });
@@ -926,6 +953,7 @@ export async function POST(req: NextRequest) {
       ? (body.agentModels as AgentModelOverrides)
       : undefined
   );
+  const requestedModel = typeof model === 'string' ? model : '';
 
   const agentId = String(agent || '').trim();
 
@@ -933,7 +961,7 @@ export async function POST(req: NextRequest) {
     return handleManual(
       agentId,
       String(message || ''),
-      String(model || 'claude-sonnet-4-6'),
+      requestedModel,
       String(provider || 'claude'),
       typeof workingDir === 'string' ? workingDir : undefined,
       parsedAgentModels,
@@ -943,7 +971,7 @@ export async function POST(req: NextRequest) {
   return handlePipeline(
     agentId,
     String(message || ''),
-    String(model || 'claude-opus-4-6'),
+    requestedModel,
     String(provider || 'claude'),
     typeof workingDir === 'string' ? workingDir : undefined,
     parsedAgentModels,
