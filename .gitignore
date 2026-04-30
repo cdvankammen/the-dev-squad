@@ -18,6 +18,7 @@
 
 # next.js
 /.next/
+/.next-runtime/
 /out/
 
 # production
@@ -56,3 +57,6 @@ CLAUDE.md
 /.next-instances
 /.next-instances
 *.gz
+/Users/stillbulldog35/.vscode-insiders/tmp/tmp_vscode_17
+/.next-instances
+/.next-instances

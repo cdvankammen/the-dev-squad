@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { rmSync, mkdirSync } from 'node:fs';
 import net from 'node:net';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 function isPortFree(port) {
   return new Promise((resolvePort) => {
@@ -23,7 +23,9 @@ async function findOpenPort(startPort) {
 
 const preferredPort = Number(process.env.PORT || 3000);
 const port = await findOpenPort(Number.isFinite(preferredPort) ? preferredPort : 3000);
-const distDir = `.next-instances/port-${port}`;
+const usesDefaultDistRoot = !process.env.DEV_SQUAD_NEXT_DIST_ROOT;
+const distRoot = process.env.DEV_SQUAD_NEXT_DIST_ROOT || '.next-runtime';
+const distDir = join(distRoot, `port-${port}`);
 
 try {
   rmSync('.vexp/daemon.sock', { force: true });
@@ -31,7 +33,23 @@ try {
   // ignore socket cleanup failures
 }
 
-mkdirSync('.next-instances', { recursive: true });
+mkdirSync(distRoot, { recursive: true });
+
+try {
+  if (usesDefaultDistRoot) {
+    rmSync(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } else {
+    for (const volatilePath of [
+      join(distDir, 'dev', 'static', 'webpack'),
+      join(distDir, 'dev', 'cache', 'webpack'),
+      join(distDir, 'dev', 'trace'),
+    ]) {
+      rmSync(volatilePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+  }
+} catch (error) {
+  console.warn(`[dev] warning: could not clean stale Next dev output in ${distDir}: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 console.log(`[dev] starting Next.js on http://localhost:${port} using ${distDir}`);
 

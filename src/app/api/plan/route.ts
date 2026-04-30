@@ -1,11 +1,17 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { authorizeLocalOrTokenRequest } from '@/lib/skill-runtime';
 
 const BUILDS_DIR = join(homedir(), 'Builds');
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = authorizeLocalOrTokenRequest(req, 'plan endpoint');
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message || 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const dirs = readdirSync(BUILDS_DIR)
       .map(name => join(BUILDS_DIR, name))

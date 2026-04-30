@@ -151,6 +151,20 @@ function readJsonFromUrl(url: string, providerId: ProviderId) {
 }
 
 function mapModelList(providerId: ProviderId, parsed: unknown): ProviderModel[] {
+  if (Array.isArray(parsed)) {
+    return dedupeModels(parsed
+      .map((model) => {
+        if (typeof model === 'string') {
+          return { id: model, label: model, providerId, source: getModelSource(providerId) };
+        }
+        const record = model as Record<string, unknown>;
+        const id = String(record.key || record.id || record.name || record.model || record.display_name || '').trim();
+        const label = String(record.display_name || record.name || record.id || record.key || id).trim();
+        return { id, label, providerId, source: getModelSource(providerId) };
+      })
+      .filter((model) => model.id));
+  }
+
   if (!parsed || typeof parsed !== 'object') return [];
 
   const asRecord = parsed as Record<string, unknown>;

@@ -87,7 +87,10 @@ export function readProviderRuntimeSettings(providerId?: string): ProviderRuntim
     host: readStoredValue(getProviderStorageKey('host', providerId)) || undefined,
     port: readStoredValue(getProviderStorageKey('port', providerId)) || undefined,
     baseUrl: readStoredValue(getProviderStorageKey('baseUrl', providerId)) || undefined,
-    apiKey: readStoredValue(getProviderStorageKey('apiKey', providerId)) || undefined,
+    // API keys are intentionally not read back from browser storage. The server-side
+    // provider config owns persisted secrets; the browser may hold a typed key only
+    // in React state long enough to submit it to /api/provider-config.
+    apiKey: undefined,
     workingDir: readStoredValue(getProviderStorageKey('workingDir', providerId)) || undefined,
   };
 }
@@ -98,9 +101,11 @@ export function writeProviderRuntimeSettings(providerId: string | undefined, set
     ['host', settings.host],
     ['port', settings.port],
     ['baseUrl', settings.baseUrl],
-    ['apiKey', settings.apiKey],
     ['workingDir', settings.workingDir],
   ];
+
+  // Remove legacy client-side API-key copies if an older build wrote them.
+  removeStoredValue(getProviderStorageKey('apiKey', normalizedProvider));
 
   for (const [field, value] of entries) {
     const key = getProviderStorageKey(field, normalizedProvider);

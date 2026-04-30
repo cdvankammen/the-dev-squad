@@ -12,7 +12,8 @@ export async function GET() {
         host: config.host,
         port: config.port,
         baseUrl: config.baseUrl || '',
-        apiKey: config.apiKey || '',
+        apiKey: '',
+        apiKeyConfigured: Boolean(config.apiKey),
         enabled: config.enabled !== false,
       },
     };

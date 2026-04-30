@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startAuditAction, type AuditAction } from '@/lib/pipeline-control';
+import { authorizeLocalOrTokenRequest } from '@/lib/skill-runtime';
 
 const VALID_ACTIONS: AuditAction[] = ['send-to-c', 'dismiss', 'deploy'];
 
 export async function POST(req: NextRequest) {
+  const auth = authorizeLocalOrTokenRequest(req, 'audit action endpoint');
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message || 'Unauthorized' }, { status: 401 });
+  }
+
   let action: AuditAction | null = null;
   let findingId: string | undefined;
   let projectDir: string | undefined;

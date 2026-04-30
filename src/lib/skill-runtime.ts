@@ -21,18 +21,7 @@ export interface SkillAuthResult {
   message?: string;
 }
 
-const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
-
-function isPrivateIpHost(host: string): boolean {
-  if (/^10\./.test(host)) return true;
-  if (/^192\.168\./.test(host)) return true;
-  const match = host.match(/^172\.(\d{1,3})\./);
-  if (match) {
-    const second = Number.parseInt(match[1] || '', 10);
-    return Number.isFinite(second) && second >= 16 && second <= 31;
-  }
-  return false;
-}
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 function extractSkillToken(req: NextRequest): string {
   const auth = String(req.headers.get('authorization') || '').trim();
@@ -49,10 +38,10 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(aBuf, bBuf);
 }
 
-function isLocalSkillRequest(req: NextRequest): boolean {
+function isLoopbackRequest(req: NextRequest): boolean {
   try {
     const host = new URL(req.url).hostname.toLowerCase();
-    return LOCALHOST_HOSTNAMES.has(host) || host.endsWith('.local') || isPrivateIpHost(host);
+    return LOOPBACK_HOSTNAMES.has(host);
   } catch {
     return false;
   }
@@ -66,21 +55,15 @@ export function authorizeLocalOrTokenRequest(req: NextRequest, surfaceLabel = 'e
   const expected = String(process.env.DEV_SQUAD_API_TOKEN || '').trim();
   const allowUnauthLocal = String(process.env.DEV_SQUAD_ALLOW_UNAUTH_LOCAL || '').trim() === '1';
 
-  if (allowUnauthLocal && isLocalSkillRequest(req)) {
+  if (allowUnauthLocal && isLoopbackRequest(req)) {
     return { ok: true };
   }
 
   if (!expected) {
-    if (isLocalSkillRequest(req)) {
-      return { ok: true };
-    }
-    if (!allowUnauthLocal) {
-      return {
-        ok: false,
-        message: `Unauthorized: set DEV_SQUAD_API_TOKEN (recommended) or DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1 for localhost-only ${surfaceLabel} development`,
-      };
-    }
-    return { ok: true };
+    return {
+      ok: false,
+      message: `Unauthorized: set DEV_SQUAD_API_TOKEN (recommended) or DEV_SQUAD_ALLOW_UNAUTH_LOCAL=1 for localhost-only ${surfaceLabel} development`,
+    };
   }
 
   const provided = extractSkillToken(req);
