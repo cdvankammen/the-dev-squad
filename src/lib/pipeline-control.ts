@@ -71,13 +71,25 @@ export function appendPipelineEvent(
   writeJson(file, state);
 }
 
-function spawnOrchestrator(projectDir: string, securityMode: SecurityMode, aSession?: string, permissionMode?: PermissionMode) {
+function spawnOrchestrator(
+  projectDir: string,
+  securityMode: SecurityMode,
+  aSession?: string,
+  permissionMode?: PermissionMode,
+  overrides?: { model?: string; provider?: string; workingDir?: string; agentModels?: Record<string, string> }
+) {
   const orchestratorPath = join(BUILDUI_DIR, 'orchestrator.ts');
   const args = ['tsx', orchestratorPath, '--project-dir', projectDir];
   if (aSession) args.push('--a-session', aSession);
 
   const env: NodeJS.ProcessEnv = { ...process.env, PIPELINE_SECURITY_MODE: securityMode };
   if (permissionMode) env.PIPELINE_PERMISSION_MODE = permissionMode;
+  if (overrides?.model) env.PIPELINE_MODEL = overrides.model;
+  if (overrides?.provider) env.PIPELINE_PROVIDER = overrides.provider;
+  if (overrides?.workingDir) env.PIPELINE_WORKING_DIR = overrides.workingDir;
+  if (overrides?.agentModels && Object.keys(overrides.agentModels).length > 0) {
+    env.PIPELINE_AGENT_MODELS = JSON.stringify(overrides.agentModels);
+  }
 
   const child = spawn('npx', args, {
     cwd: projectDir,
@@ -96,6 +108,10 @@ export function startPipelineRun(options: {
   permissionMode?: PermissionMode;
   runGoal?: RunGoal;
   runFinalAudit?: boolean;
+  model?: string;
+  provider?: string;
+  workingDir?: string;
+  agentModels?: Record<string, string>;
 }): { success: boolean; error?: string; projectDir?: string; securityMode?: SecurityMode; permissionMode?: PermissionMode; runGoal?: RunGoal; runFinalAudit?: boolean } {
   const securityMode = options.securityMode === 'strict' ? 'strict' : 'fast';
   const permissionMode: PermissionMode = options.permissionMode === 'plan' ? 'plan'
@@ -159,6 +175,10 @@ export function startPipelineRun(options: {
   stagingState.permissionMode = permissionMode;
   stagingState.runGoal = runGoal;
   stagingState.runFinalAudit = runFinalAudit;
+  stagingState.selectedModel = options.model || String(stagingState.selectedModel || 'claude-opus-4-6');
+  stagingState.selectedProvider = options.provider || String(stagingState.selectedProvider || 'claude');
+  stagingState.requestedWorkingDir = options.workingDir || String(stagingState.requestedWorkingDir || '');
+  stagingState.agentModels = options.agentModels || (stagingState.agentModels as Record<string, string> | undefined) || {};
   stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';
   stagingState.pipelineStatus = 'running';
   stagingState.resumeAction = 'none';
@@ -168,7 +188,12 @@ export function startPipelineRun(options: {
     rmSync(STAGING_DIR, { recursive: true, force: true });
   } catch {}
 
-  spawnOrchestrator(projectDir, securityMode, aSession || undefined, permissionMode);
+  spawnOrchestrator(projectDir, securityMode, aSession || undefined, permissionMode, {
+    model: stagingState.selectedModel as string | undefined,
+    provider: stagingState.selectedProvider as string | undefined,
+    workingDir: stagingState.requestedWorkingDir as string | undefined,
+    agentModels: stagingState.agentModels as Record<string, string> | undefined,
+  });
 
   return { success: true, projectDir, securityMode, permissionMode, runGoal, runFinalAudit };
 }
