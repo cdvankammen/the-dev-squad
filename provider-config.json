@@ -1,7 +1,7 @@
 {
   "lm-studio": {
     "id": "lm-studio",
-    "host": "localhost",
+    "host": "10.2.0.90",
     "port": 8080,
     "baseUrl": "http://10.2.0.90:1234"
   },

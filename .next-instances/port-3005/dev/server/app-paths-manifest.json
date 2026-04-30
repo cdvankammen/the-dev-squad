@@ -1,9 +1,6 @@
 {
-  "/api/models/route": "app/api/models/route.js",
-  "/api/providers/route": "app/api/providers/route.js",
-  "/api/pending/route": "app/api/pending/route.js",
   "/api/state/route": "app/api/state/route.js",
-  "/api/provider-config/route": "app/api/provider-config/route.js",
-  "/page": "app/page.js",
-  "/squad/page": "app/squad/page.js"
+  "/api/pending/route": "app/api/pending/route.js",
+  "/squad/page": "app/squad/page.js",
+  "/page": "app/page.js"
 }
