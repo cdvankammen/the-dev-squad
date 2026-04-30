@@ -115,6 +115,8 @@ export function useProviderRuntime({
   const [hydrated, setHydrated] = useState(false);
   const configSyncKeyRef = useRef('');
   const refreshSyncKeyRef = useRef('');
+  const bootstrapRef = useRef(false);
+  const lastPrimaryModelRefreshRef = useRef('');
 
   const selectedProviderDefinition = useMemo(
     () => providers.find((provider) => provider.id === selectedProvider) || null,
@@ -209,6 +211,9 @@ export function useProviderRuntime({
   }, [defaultModel, selectedModel, selectedProvider]);
 
   useEffect(() => {
+    if (bootstrapRef.current) return;
+    bootstrapRef.current = true;
+
     const storedProvider = readProviderSelection(defaultProvider);
     const runtime = readProviderRuntimeSettings(storedProvider);
     const runtimeUrlParts = parseBaseUrlParts(runtime.baseUrl);
@@ -223,8 +228,7 @@ export function useProviderRuntime({
     setHydrated(true);
 
     void refreshProviders();
-    void refreshModels(storedProvider);
-  }, [defaultProvider, defaultModel, defaultWorkingDir, refreshModels, refreshProviders]);
+  }, [defaultProvider, defaultModel, defaultWorkingDir, refreshProviders]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -244,7 +248,11 @@ export function useProviderRuntime({
       defaultModel
     );
     setAgentModelsState(readAgentModelOverrides(selectedProvider) as Partial<Record<AgentId, string>>);
-    void refreshModels(selectedProvider);
+
+    if (lastPrimaryModelRefreshRef.current !== selectedProvider) {
+      lastPrimaryModelRefreshRef.current = selectedProvider;
+      void refreshModels(selectedProvider);
+    }
   }, [defaultModel, defaultWorkingDir, hydrated, refreshModels, selectedProvider, selectedProviderDefinition]);
 
   useEffect(() => {

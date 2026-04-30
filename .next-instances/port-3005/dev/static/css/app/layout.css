@@ -957,6 +957,9 @@
   .min-h-\[5\.4rem\] {
     min-height: 5.4rem;
   }
+  .min-h-\[18rem\] {
+    min-height: 18rem;
+  }
   .min-h-\[22rem\] {
     min-height: 22rem;
   }
@@ -2459,6 +2462,10 @@
   .font-semibold {
     --tw-font-weight: var(--font-weight-semibold);
     font-weight: var(--font-weight-semibold);
+  }
+  .tracking-\[0\.2em\] {
+    --tw-tracking: 0.2em;
+    letter-spacing: 0.2em;
   }
   .tracking-\[0\.12em\] {
     --tw-tracking: 0.12em;

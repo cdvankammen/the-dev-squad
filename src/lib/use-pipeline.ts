@@ -179,7 +179,7 @@ async function readJsonResponse<T extends Record<string, unknown> = Record<strin
   }
 }
 
-export function usePipelineState({ pollInterval = 400, mode, model, provider, workingDir, agentModels }: UsePipelineOptions) {
+export function usePipelineState({ pollInterval = 3000, mode, model, provider, workingDir, agentModels }: UsePipelineOptions) {
   const [state, setState] = useState<PipelineState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
 

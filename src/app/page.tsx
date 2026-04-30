@@ -1,16 +1,28 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/shared/Badge';
 import { AutoGrowTextarea } from '@/components/shared/AutoGrowTextarea';
 import { MarkdownText } from '@/components/shared/MarkdownText';
-import { LunarOfficeScene } from '@/components/mission/LunarOfficeScene';
 import { SecurityAuditPanel } from '@/components/agents/SecurityAuditPanel';
 import { canAutoResumeTurn } from '@/lib/pipeline-runtime';
 import { getExecutionPathStatus, getSupervisorRecommendation, getSupervisorUpdate } from '@/lib/pipeline-supervisor';
 import { usePipelineState, type AgentId, type AppMode, type PendingApproval, type PermissionMode, type RunGoal, type SecurityMode } from '@/lib/use-pipeline';
 import { useProviderRuntime } from '@/lib/use-provider-runtime';
+
+const LunarOfficeScene = dynamic(
+  () => import('@/components/mission/LunarOfficeScene').then((mod) => mod.LunarOfficeScene),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[18rem] items-center justify-center rounded-xl border border-white/10 bg-black/20 text-xs uppercase tracking-[0.2em] text-slate-500">
+        Loading office view…
+      </div>
+    ),
+  }
+);
 
 const AGENT_NAMES: Record<AgentId, string> = {
   A: 'Planner', B: 'Reviewer', C: 'Coder', D: 'Tester', E: 'Security Auditor', S: 'Supervisor',
@@ -122,7 +134,7 @@ export default function PipelinePage() {
   const {
     state, sendChat, startPipeline, resumePipeline, stopPipeline, setStopAfterReview, approveBash, getPlan, resetState, agentEvents, agentSpeech,
     sendFindingToC, dismissFinding, deployAfterAudit,
-  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 3000 : 6000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
+  } = usePipelineState({ pollInterval: mode === 'pipeline' ? 5000 : 10000, mode, model: selectedModel, provider: selectedProvider, workingDir: selectedWorkingDir, agentModels });
 
   const [selectedAgent, setSelectedAgent] = useState<AgentId>('S');
   const [chatInput, setChatInput] = useState('');
@@ -239,14 +251,34 @@ export default function PipelinePage() {
     );
     if (!shouldPollPending) return;
 
-    const interval = setInterval(async () => {
+    let active = true;
+    let timer: number | null = null;
+
+    const pollPending = async () => {
       try {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return;
+        }
         const res = await fetch('/api/pending?_=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
-        setPendingApproval(data?.tool && data?.approved === null ? data : null);
-      } catch {}
-    }, 8000);
-    return () => clearInterval(interval);
+        if (active) {
+          setPendingApproval(data?.tool && data?.approved === null ? data : null);
+        }
+      } catch {
+        // keep existing pending state on transient polling failures
+      } finally {
+        if (active) {
+          const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+          timer = window.setTimeout(pollPending, hidden ? 30000 : 12000);
+        }
+      }
+    };
+
+    void pollPending();
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [isPipeline, pendingApproval, state.pipelineStatus]);
 
   useEffect(() => {
@@ -627,15 +659,15 @@ export default function PipelinePage() {
                 </p>
               )}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Workspace root (optional)</label>
+                <label className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Workspace root override (optional)</label>
                 <input
                   title="Working directory"
                   value={selectedWorkingDir}
                   onChange={(e) => setSelectedWorkingDir(e.target.value)}
-                  placeholder="Optional — /Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
+                  placeholder="Example: /Users/stillbulldog35/Documents/personalGithub/the-dev-squad"
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                 />
-                <p className="text-[10px] text-slate-500">Sets the working boundary for the agents. Leave blank to use the app default workspace.</p>
+                <p className="text-[10px] text-slate-500">Sets the working boundary for the agents. Leave it blank to keep using the app default workspace root.</p>
               </div>
               {showHttpSettings && (
                 <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
@@ -658,13 +690,16 @@ export default function PipelinePage() {
                   </div>
                   <p className="text-[10px] text-slate-500">Full URL in use: <span className="font-mono text-slate-400">{providerResolvedUrl || 'http://host:port'}</span></p>
                   {showApiKeyInput && (
-                    <input
-                      title="API Key"
-                      value={providerApiKey}
-                      onChange={(e) => setProviderApiKey(e.target.value)}
-                      placeholder={selectedProvider === 'openwebui' ? 'Open WebUI API key' : 'API key'}
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
-                    />
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-[0.18em] text-slate-500">API key</label>
+                      <input
+                        title="API Key"
+                        value={providerApiKey}
+                        onChange={(e) => setProviderApiKey(e.target.value)}
+                        placeholder={selectedProvider === 'openwebui' ? 'Example: sk-...' : 'Example: provider API key'}
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
                   )}
                 </div>
               )}

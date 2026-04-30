@@ -114,3 +114,74 @@
 - `npx tsc --noEmit` ✅
 - `npx tsx scripts/test-runner.mjs` ✅
 - Post-hardening CRITICAL/HIGH audit on orchestrator/control/chat/state/reset/skill-runtime: **none found**.
+
+## Real-world validation follow-up (late 2026-04-30)
+
+### Live LM Studio end-to-end build
+- Re-ran a real Supervisor-led build against the local app using LM Studio provider `10.2.0.90:1234`.
+- Concept used: build a browser Tic-Tac-Toe game with HTML/CSS/JS and real local files.
+- Initial failure mode discovered:
+  - Planner A sometimes wrote `index.html` instead of `plan.md` during the planning phase.
+  - Coder C could also narrate code without creating implementation artifacts.
+- Fixes applied in `pipeline/orchestrator.ts`:
+  - strict planning write-step recovery when A writes the wrong file
+  - implementation-artifact enforcement for C so the run cannot claim progress without real files
+  - stricter JSON retry/fail-closed handling for reviewer/tester turns
+- Confirmed successful outcome after the fix:
+  - real `index.html`, `style.css`, and `script.js` were created under the build project directory
+  - pipeline advanced through planning, coding, review, testing, security audit, and deploy/complete flow
+  - final state reported `pipelineStatus: complete` and `buildComplete: true`
+
+### Browser-driven GUI validation
+- Playwright package installation was blocked in this environment, so GUI testing was completed using headless Chrome + raw Chrome DevTools Protocol automation instead of API-only smoke tests.
+- Proven by actual browser interaction:
+  1. **Squad provider/model switching works**
+     - switching to LM Studio loaded 25 models in the model dropdown
+     - selected model persisted in the visible control
+  2. **Squad manual send works**
+     - typed into the visible input
+     - clicked the real Send button
+     - observed `/api/chat` request and visible user message in the page
+  3. **Office manual send works**
+     - typed into the visible Office input
+     - clicked the real Send button
+     - observed `/api/chat` request and visible user message in the page
+
+### Render / polling / route-speed corrections
+- Root causes confirmed from code and logs:
+  - overly frequent `/api/state` polling
+  - additional `/api/pending` polling from both Office and Squad
+  - heavy Office scene mounting on route switch
+  - stale `.next-instances/*` TS type globs inflating dev watch churn
+- Fixes applied:
+  - `use-pipeline` default poll interval raised from 400ms to 3000ms
+  - Office/Squad polling now uses slower cadence (`5000ms` pipeline / `10000ms` manual)
+  - pending-approval polling now skips hidden tabs and backs off to 12s/30s
+  - `LunarOfficeScene` is lazy-loaded to reduce route-switch blocking
+  - wildcard `.next-instances/*` type globs removed from `tsconfig.json`
+
+### Provider UI simplification confirmed
+- Base URL input removed from Office and Squad.
+- Current model is:
+  - provider + model + refresh on one row
+  - host/IP + port on the row beneath for HTTP providers
+  - derived gray `Full URL in use` hint beneath
+  - API key field only when provider type needs it
+
+### Still not fully proven from this environment
+- **Open WebUI**
+  - config save path works
+  - host `10.2.0.22:8080` was not reachable from this test environment during direct validation
+  - model discovery therefore remained empty here
+- **Ollama**
+  - localhost `11434` was not reachable from this test environment during direct validation
+  - model discovery therefore remained empty here
+
+### Practical conclusion
+- LM Studio is now proven for:
+  - model discovery
+  - manual chat
+  - supervisor pipeline start
+  - real file creation during a build
+  - browser-observed UI interaction in both Office and Squad views
+- Open WebUI and Ollama wiring remain implemented, but live provider reachability still needs validation from a network context that can actually reach those hosts.
