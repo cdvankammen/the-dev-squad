@@ -10,6 +10,7 @@ import {
   sendSupervisorMessage,
   type SkillMode,
 } from '@/lib/skill-runtime';
+import { describeModelListing, getProviderDefinition } from '@/lib/provider-catalog';
 
 function resolveMode(input: unknown): SkillMode {
   return input === 'manual' ? 'manual' : 'pipeline';
@@ -49,6 +50,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  if (action === 'provider_models') {
+    const provider = getProviderDefinition(req.nextUrl.searchParams.get('provider') || 'lm-studio');
+    const result = describeModelListing(provider.id);
+    return NextResponse.json({
+      success: result.status === 'ok',
+      providerId: provider.id,
+      provider,
+      status: result.status,
+      error: result.error,
+      endpoint: result.endpoint,
+      models: result.models,
+      note: 'Use these model ids in supervisor_message model and agentModels fields. LM Studio/Ollama >8B model switches are cooldown-protected by the orchestrator.',
+    });
+  }
+
   return NextResponse.json({
     success: true,
     mode,
@@ -57,6 +73,7 @@ export async function GET(req: NextRequest) {
       send: 'POST /api/skill/dev-squad with {"action":"supervisor_message","message":"..."}',
       state: 'GET /api/skill/dev-squad?action=state&mode=pipeline',
       updates: 'GET /api/skill/dev-squad?action=updates&mode=pipeline&after=0&limit=50',
+      providerModels: 'GET /api/skill/dev-squad?action=provider_models&provider=lm-studio',
     },
   });
 }
@@ -98,11 +115,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (action === 'provider_models') {
+    const provider = getProviderDefinition(typeof body.provider === 'string' ? body.provider : 'lm-studio');
+    const result = describeModelListing(provider.id);
+    return NextResponse.json({
+      success: result.status === 'ok',
+      providerId: provider.id,
+      provider,
+      status: result.status,
+      error: result.error,
+      endpoint: result.endpoint,
+      models: result.models,
+      note: 'Use these model ids in supervisor_message model and agentModels fields. LM Studio/Ollama >8B model switches are cooldown-protected by the orchestrator.',
+    });
+  }
+
   if (action !== 'supervisor_message') {
     return NextResponse.json({
       success: false,
       error: `Unknown action: ${action}`,
-      allowedActions: ['supervisor_message', 'pipeline_state', 'pipeline_updates'],
+      allowedActions: ['supervisor_message', 'pipeline_state', 'pipeline_updates', 'provider_models'],
     }, { status: 400 });
   }
 

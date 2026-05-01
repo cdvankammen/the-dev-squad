@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST="{\"app/page.tsx -> @/components/mission/LunarOfficeScene\":{\"id\":\"app/page.tsx -> @/components/mission/LunarOfficeScene\",\"files\":[\"static/chunks/_app-pages-browser_src_components_mission_LunarOfficeScene_tsx.js\"]}}"

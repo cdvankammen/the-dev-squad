@@ -35,6 +35,9 @@ export interface ProviderModelSummary {
   label: string;
   providerId: string;
   source: string;
+  paramsString?: string;
+  sizeB?: number;
+  cooldownExempt?: boolean;
 }
 
 export interface UseProviderRuntimeOptions {

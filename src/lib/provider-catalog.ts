@@ -16,6 +16,9 @@ export interface ProviderModel {
   label: string;
   providerId: ProviderId;
   source: 'static' | 'opencode' | 'lm-studio';
+  paramsString?: string;
+  sizeB?: number;
+  cooldownExempt?: boolean;
 }
 
 export interface OpenCodeProviderInfo {
@@ -139,6 +142,35 @@ function getModelSource(providerId: ProviderId): ProviderModel['source'] {
   return 'static';
 }
 
+function estimateModelSizeBFromText(...parts: unknown[]): number | undefined {
+  const text = parts.map((part) => String(part || '')).join(' ').toLowerCase();
+  const explicit = text.match(/(?:^|[-_/\s:])([0-9]+(?:\.[0-9]+)?)\s*(?:b|bn|billion)(?:$|[-_/\s:])/);
+  if (explicit) {
+    const parsed = Number.parseFloat(explicit[1] || '');
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const efficient = text.match(/(?:^|[-_/\s:])e([0-9]+(?:\.[0-9]+)?)b(?:$|[-_/\s:])/);
+  if (efficient) {
+    const parsed = Number.parseFloat(efficient[1] || '');
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (/\b(nano|tiny|mini|small)\b/.test(text)) return 4;
+  return undefined;
+}
+
+function buildProviderModel(providerId: ProviderId, id: string, label?: string, record?: Record<string, unknown>): ProviderModel {
+  const paramsString = String(record?.params_string || record?.parameter_size || '').trim() || undefined;
+  const sizeB = estimateModelSizeBFromText(paramsString, id, label, record?.display_name, record?.name);
+  return {
+    id,
+    label: String(label || id).trim() || id,
+    providerId,
+    source: getModelSource(providerId),
+    ...(paramsString ? { paramsString } : {}),
+    ...(sizeB !== undefined ? { sizeB, cooldownExempt: sizeB <= 8 } : {}),
+  };
+}
+
 function readJsonFromUrl(url: string, providerId: ProviderId) {
   const cfg = getProviderConfig(providerId);
   const args = ['-sS', '--connect-timeout', '3', '--max-time', '5'];
@@ -155,12 +187,12 @@ function mapModelList(providerId: ProviderId, parsed: unknown): ProviderModel[] 
     return dedupeModels(parsed
       .map((model) => {
         if (typeof model === 'string') {
-          return { id: model, label: model, providerId, source: getModelSource(providerId) };
+          return buildProviderModel(providerId, model, model);
         }
         const record = model as Record<string, unknown>;
         const id = String(record.key || record.id || record.name || record.model || record.display_name || '').trim();
         const label = String(record.display_name || record.name || record.id || record.key || id).trim();
-        return { id, label, providerId, source: getModelSource(providerId) };
+        return buildProviderModel(providerId, id, label, record);
       })
       .filter((model) => model.id));
   }
@@ -175,12 +207,12 @@ function mapModelList(providerId: ProviderId, parsed: unknown): ProviderModel[] 
     return dedupeModels(models
       .map((model) => {
         if (typeof model === 'string') {
-          return { id: model, label: model, providerId, source: getModelSource(providerId) };
+          return buildProviderModel(providerId, model, model);
         }
         const record = model as Record<string, unknown>;
         const id = String(record.key || record.id || record.name || record.model || record.display_name || '').trim();
         const label = String(record.display_name || record.name || record.id || record.key || id).trim();
-        return { id, label, providerId, source: getModelSource(providerId) };
+        return buildProviderModel(providerId, id, label, record);
       })
       .filter((model) => model.id));
   }
@@ -191,7 +223,7 @@ function mapModelList(providerId: ProviderId, parsed: unknown): ProviderModel[] 
         const record = model as Record<string, unknown>;
         const id = String(record.id || record.name || record.model || '').trim();
         const label = String(record.name || record.id || id).trim();
-        return { id, label, providerId, source: getModelSource(providerId) };
+        return buildProviderModel(providerId, id, label, record);
       })
       .filter((model) => model.id));
   }

@@ -116,6 +116,30 @@ function isSmallModel(model: string): boolean {
   return false;
 }
 
+function estimateModelSizeB(model: string): number | null {
+  const normalized = String(model || '').toLowerCase();
+  const explicitSize = normalized.match(/(?:^|[-_/\s:])([0-9]+(?:\.[0-9]+)?)\s*(?:b|bn|billion)(?:$|[-_/\s:])/);
+  if (explicitSize) {
+    const parsed = Number.parseFloat(explicitSize[1] || '');
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  const efficientSize = normalized.match(/(?:^|[-_/\s:])e([0-9]+(?:\.[0-9]+)?)b(?:$|[-_/\s:])/);
+  if (efficientSize) {
+    const parsed = Number.parseFloat(efficientSize[1] || '');
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  if (/\b(nano|tiny|mini|small)\b/.test(normalized)) return 4;
+  return null;
+}
+
+function isCooldownExemptModel(model: string): boolean {
+  const sizeB = estimateModelSizeB(model);
+  if (sizeB !== null) return sizeB <= 8;
+  return isSmallModel(model);
+}
+
 /**
  * Pick the appropriate role file for a model. Returns the lite variant when a
  * small model is selected and a corresponding lite file is present.
@@ -152,8 +176,36 @@ const BUILD_METADATA_FILES = new Set([
 const BUILD_METADATA_DIR_PREFIXES = ['.git/', '.claude/', '.next/', 'node_modules/'];
 const MAX_CODE_REVIEW_ROUNDS = 8;
 const MAX_TEST_ROUNDS = 8;
+const MODEL_SWITCH_COOLDOWN_MS = Math.max(0, Number.parseInt(process.env.PIPELINE_MODEL_SWITCH_COOLDOWN_MS || '60000', 10));
 
 const runner = createRunner();
+let lastLargeModelUse: { provider: string; model: string; endedAt: number } | null = null;
+
+function providerNeedsModelCooldown(provider: string): boolean {
+  return provider === 'lm-studio' || provider === 'ollama';
+}
+
+async function waitForModelSwitchCooldown(provider: string, model: string, agent: AgentId) {
+  if (!providerNeedsModelCooldown(provider) || !model || isCooldownExemptModel(model)) return;
+  if (!lastLargeModelUse || lastLargeModelUse.provider !== provider || lastLargeModelUse.model === model) return;
+
+  const elapsed = Date.now() - lastLargeModelUse.endedAt;
+  const remaining = MODEL_SWITCH_COOLDOWN_MS - elapsed;
+  if (remaining <= 0) return;
+
+  emit(
+    'system',
+    state.currentPhase,
+    'status',
+    `Waiting ${Math.ceil(remaining / 1000)}s before switching ${provider} from ${lastLargeModelUse.model} to ${model} for agent ${agent} so the previous large model can unload.`
+  );
+  await new Promise((resolve) => setTimeout(resolve, remaining));
+}
+
+function noteModelUseComplete(provider: string, model: string) {
+  if (!providerNeedsModelCooldown(provider) || !model || isCooldownExemptModel(model)) return;
+  lastLargeModelUse = { provider, model, endedAt: Date.now() };
+}
 
 // ── CLI Args ────────────────────────────────────────────────────────
 //
@@ -731,15 +783,18 @@ async function runClaudeTurn(
   fallbackToHost: boolean;
   fallbackReason?: string;
 }> {
+  const safePrompt = prompt.startsWith('-') ? 'User says: ' + prompt : prompt;
+  const workspaceDir = projectDir;
+  const guardedPrompt = `${buildWorkspaceGuardPrompt(workspaceDir)}\n\n${safePrompt}`;
+  const isPlanningWriteTurn = agent === 'A' && state.currentPhase === 'planning' && looksLikePlanningWritePrompt(safePrompt);
+  const effort = AGENT_EFFORT[agent] || 'high';
+  const selectedModel = state.agentModels?.[agent] || ENV_AGENT_MODELS?.[agent] || state.selectedModel || ENV_MODEL || DEFAULT_MODEL;
+  const selectedProvider = state.selectedProvider || ENV_PROVIDER || DEFAULT_PROVIDER;
+  const effectiveRole = resolveRoleFile(opts.role, selectedModel);
+
+  await waitForModelSwitchCooldown(selectedProvider, selectedModel, agent);
+
   return new Promise((resolve, reject) => {
-    const safePrompt = prompt.startsWith('-') ? 'User says: ' + prompt : prompt;
-    const workspaceDir = state.requestedWorkingDir || ENV_WORKING_DIR || projectDir;
-    const guardedPrompt = `${buildWorkspaceGuardPrompt(workspaceDir)}\n\n${safePrompt}`;
-    const isPlanningWriteTurn = agent === 'A' && state.currentPhase === 'planning' && looksLikePlanningWritePrompt(safePrompt);
-    const effort = AGENT_EFFORT[agent] || 'high';
-    const selectedModel = state.agentModels?.[agent] || ENV_AGENT_MODELS?.[agent] || state.selectedModel || ENV_MODEL || DEFAULT_MODEL;
-    const selectedProvider = state.selectedProvider || ENV_PROVIDER || DEFAULT_PROVIDER;
-    const effectiveRole = resolveRoleFile(opts.role, selectedModel);
     const runnerOpts = {
       prompt: guardedPrompt,
       projectDir,
@@ -752,6 +807,10 @@ async function runClaudeTurn(
       effort,
       pipelineAgent: agent,
       securityMode: state.securityMode,
+      extraEnv: {
+        PIPELINE_WORKSPACE_ROOT: projectDir,
+        PIPELINE_BUILD_PROJECT_DIR: projectDir,
+      } as unknown as NodeJS.ProcessEnv,
       templateFiles: agent === 'A'
         ? [
             join(BUILDUI_DIR, 'build-plan-template.md'),
@@ -783,6 +842,13 @@ async function runClaudeTurn(
     let lastVisibleActivityAt = Date.now();
     let bashInFlight = false;
     let diagnosticTail = '';
+    let modelUseRecorded = false;
+
+    function finishModelUse() {
+      if (modelUseRecorded) return;
+      modelUseRecorded = true;
+      noteModelUseComplete(selectedProvider, selectedModel);
+    }
 
     function noteDiagnostic(text: string) {
       if (!text) return;
@@ -796,6 +862,7 @@ async function runClaudeTurn(
         settled = true;
         clearInterval(stallWatcher);
         clearActiveTurn(agent);
+        finishModelUse();
         emit('system', state.currentPhase, 'status', 'Detected a stable plan.md draft from the local provider write turn; advancing without waiting for more narration.');
         resolve({
           result: 'Draft written',
@@ -828,6 +895,7 @@ async function runClaudeTurn(
       stalled = true;
       settled = true;
       clearInterval(stallWatcher);
+      finishModelUse();
       resolve({
         result: '',
         sessionId: currentSessionId,
@@ -945,6 +1013,7 @@ async function runClaudeTurn(
                 interruptedForApproval = true;
                 settled = true;
                 clearActiveTurn(agent);
+                finishModelUse();
                 resolve({
                   result: '',
                   sessionId: currentSessionId,
@@ -1006,6 +1075,7 @@ async function runClaudeTurn(
       if (canFallbackToHost && isRecoverableDockerAuthFailure(combinedFailureText)) {
         settled = true;
         clearActiveTurn(agent);
+        finishModelUse();
         resolve({
           result: '',
           sessionId: currentSessionId,
@@ -1021,6 +1091,7 @@ async function runClaudeTurn(
 
       if (code !== 0 || !lastResult) {
         clearActiveTurn(agent);
+        finishModelUse();
         emit('system', state.currentPhase, 'failure', `Agent ${agent} failed (exit ${code})`);
         if (stderr) console.error(stderr.slice(0, 500));
         reject(new Error(`Agent ${agent} failed with exit code ${code}`));
@@ -1029,6 +1100,7 @@ async function runClaudeTurn(
 
       settled = true;
       clearActiveTurn(agent);
+      finishModelUse();
       resolve({
         result: (lastResult.result as string) || '',
         sessionId: (lastResult.session_id as string) || currentSessionId,
@@ -1044,6 +1116,7 @@ async function runClaudeTurn(
       if (settled) return;
       clearInterval(stallWatcher);
       clearActiveTurn(agent);
+      finishModelUse();
       emit('system', state.currentPhase, 'failure', `Failed to spawn agent ${agent}: ${err.message}`);
       reject(err);
     });

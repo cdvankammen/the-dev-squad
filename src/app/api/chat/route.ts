@@ -18,6 +18,7 @@ import {
   appendPipelineEvent,
   resumePipelineRun,
   setStopAfterReview,
+  startAuditAction,
   startPipelineRun,
   stopPipelineRun,
   type PermissionMode,
@@ -1026,6 +1027,24 @@ function handlePipeline(
         return NextResponse.json({
           success: true,
           controlAction: result.action || 'resume-run',
+          projectDir: result.projectDir,
+        });
+      }
+
+      if (supervisorIntent.action === 'audit-deploy') {
+        const result = startAuditAction('deploy', undefined, controlProjectDir === STAGING_DIR ? undefined : controlProjectDir);
+        if (!result.success) {
+          appendSupervisorFailureAndGuidance(
+            controlState,
+            controlEventsFile,
+            result.error || 'Supervisor could not deploy after audit'
+          );
+          return NextResponse.json({ success: false, error: result.error || 'Could not deploy after audit' }, { status: result.status || 409 });
+        }
+
+        return NextResponse.json({
+          success: true,
+          controlAction: 'audit-deploy',
           projectDir: result.projectDir,
         });
       }

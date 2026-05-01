@@ -23,6 +23,21 @@ export interface SkillAuthResult {
 
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
+function normalizeHeaderHost(value: string): string {
+  const trimmed = String(value || '').trim().toLowerCase();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']');
+    return end === -1 ? trimmed : trimmed.slice(0, end + 1);
+  }
+  return trimmed.split(':')[0] || '';
+}
+
+function isLoopbackHostName(host: string): boolean {
+  const normalized = normalizeHeaderHost(host);
+  return LOOPBACK_HOSTNAMES.has(normalized) || normalized === '::ffff:127.0.0.1';
+}
+
 function extractSkillToken(req: NextRequest): string {
   const auth = String(req.headers.get('authorization') || '').trim();
   if (auth.toLowerCase().startsWith('bearer ')) {
@@ -40,8 +55,17 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 function isLoopbackRequest(req: NextRequest): boolean {
   try {
-    const host = new URL(req.url).hostname.toLowerCase();
-    return LOOPBACK_HOSTNAMES.has(host);
+    const urlHost = new URL(req.url).hostname.toLowerCase();
+    const hostHeader = req.headers.get('host') || '';
+    const forwardedHost = req.headers.get('x-forwarded-host') || '';
+    const forwarded = req.headers.get('forwarded') || '';
+    const forwardedHostMatch = forwarded.match(/host=([^;,]+)/i);
+
+    if (!isLoopbackHostName(urlHost)) return false;
+    if (hostHeader && !isLoopbackHostName(hostHeader)) return false;
+    if (forwardedHost && !isLoopbackHostName(forwardedHost)) return false;
+    if (forwardedHostMatch?.[1] && !isLoopbackHostName(forwardedHostMatch[1])) return false;
+    return true;
   } catch {
     return false;
   }

@@ -666,6 +666,45 @@ function isPathInside(root, target) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+function getWorkspaceRoot() {
+  const envRoot = String(process.env.PIPELINE_WORKSPACE_ROOT || process.env.PIPELINE_BUILD_PROJECT_DIR || '').trim();
+  return envRoot ? path.resolve(envRoot) : findPipelineProjectRoot(process.cwd());
+}
+
+function getReadGuardDecision(filePath) {
+  const agent = process.env.PIPELINE_AGENT || '';
+  const resolved = resolvePath(filePath);
+  if (!agent) return { allow: true, resolvedPath: resolved };
+
+  const workspaceRoot = getWorkspaceRoot();
+  if (!isPathInside(workspaceRoot, resolved)) {
+    return {
+      allow: false,
+      resolvedPath: resolved,
+      message: `BLOCKED: Cannot read ${resolved} — outside the active build workspace ${workspaceRoot}`,
+    };
+  }
+
+  return { allow: true, resolvedPath: resolved };
+}
+
+function getSearchRootDecision(searchPath) {
+  const agent = process.env.PIPELINE_AGENT || '';
+  const resolved = searchPath ? resolvePath(searchPath) : process.cwd();
+  if (!agent) return { allow: true, resolvedPath: resolved };
+
+  const workspaceRoot = getWorkspaceRoot();
+  if (!isPathInside(workspaceRoot, resolved)) {
+    return {
+      allow: false,
+      resolvedPath: resolved,
+      message: `BLOCKED: Cannot search ${resolved} — outside the active build workspace ${workspaceRoot}`,
+    };
+  }
+
+  return { allow: true, resolvedPath: resolved };
+}
+
 function getWriteGuardDecision(filePath) {
   const agent = process.env.PIPELINE_AGENT || '';
   const resolved = resolvePath(filePath);
@@ -678,7 +717,7 @@ function getWriteGuardDecision(filePath) {
     return { allow: false, resolvedPath: resolved, message: `BLOCKED: Unknown agent identity '${agent}'` };
   }
 
-  const projectDir = findPipelineProjectRoot(process.cwd());
+  const projectDir = getWorkspaceRoot();
   const normalized = resolved.split(path.sep).join('/').toLowerCase();
   const fileName = path.basename(resolved);
 
@@ -783,6 +822,31 @@ function getBashGuardDecision(command) {
             ? 'BLOCKED: Agent B cannot run Bash commands in pipeline mode.'
             : 'BLOCKED: Agent E cannot run Bash commands in pipeline mode.',
     };
+  }
+
+  const workspaceRoot = getWorkspaceRoot();
+  const rawCommand = String(command || '');
+  if (/(^|[\s;&|])cd\s+(?:\.\.(?:\/|\s|$)|~(?:\/|\s|$)|\/(?:\s|$|[^&|;]*))/i.test(rawCommand)) {
+    return {
+      allow: false,
+      message: `BLOCKED: Bash command attempts to leave the active build workspace ${workspaceRoot}`,
+    };
+  }
+
+  const absolutePathPattern = /(^|[\s"'`=])((?:~\/|\/)[^\s"'`;&|)]*)/g;
+  let absoluteMatch;
+  while ((absoluteMatch = absolutePathPattern.exec(rawCommand)) !== null) {
+    const rawToken = String(absoluteMatch[2] || '').replace(/[),.]+$/, '');
+    if (!rawToken || rawToken === '/') continue;
+    const resolvedToken = rawToken.startsWith('~/')
+      ? path.resolve(os.homedir(), rawToken.slice(2))
+      : path.resolve(rawToken);
+    if (!isPathInside(workspaceRoot, resolvedToken)) {
+      return {
+        allow: false,
+        message: `BLOCKED: Bash command references ${resolvedToken}, outside the active build workspace ${workspaceRoot}`,
+      };
+    }
   }
 
   if (securityMode === 'strict' && (agent === 'C' || agent === 'D')) {
@@ -920,7 +984,9 @@ async function executeTool(name, input) {
   try {
     switch (normalizedName) {
       case 'Read': {
-        const fp = resolvePath(input.file_path);
+        const readGuard = getReadGuardDecision(input.file_path);
+        if (!readGuard.allow) return { is_error: true, content: readGuard.message };
+        const fp = readGuard.resolvedPath;
         if (!fs.existsSync(fp)) return { is_error: true, content: `File not found: ${fp}` };
         const stat = fs.statSync(fp);
         if (stat.isDirectory()) {
@@ -993,6 +1059,8 @@ async function executeTool(name, input) {
         try {
           const pattern = String(input.pattern || '').trim();
           if (!pattern) return { is_error: true, content: 'Glob requires a non-empty pattern' };
+          const searchGuard = getSearchRootDecision(process.cwd());
+          if (!searchGuard.allow) return { is_error: true, content: searchGuard.message };
 
           // Convert simple glob to a regex (supports **, *, ?)
           const escapeRegex = (s) => s.replace(/[.+^${}()|[\\]\\\\]/g, '\\$&');
@@ -1030,7 +1098,9 @@ async function executeTool(name, input) {
 
       case 'Grep': {
         try {
-          const searchPath = input.path ? resolvePath(input.path) : process.cwd();
+          const searchGuard = getSearchRootDecision(input.path || process.cwd());
+          if (!searchGuard.allow) return { is_error: true, content: searchGuard.message };
+          const searchPath = searchGuard.resolvedPath;
           const patternRaw = String(input.pattern || '');
           if (!patternRaw) return { is_error: true, content: 'Grep requires a non-empty pattern' };
 

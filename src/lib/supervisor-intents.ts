@@ -15,6 +15,9 @@ export type SupervisorIntent =
       action: 'resume-run';
     }
   | {
+      action: 'audit-deploy';
+    }
+  | {
       action: 'stop-run';
     };
 
@@ -72,6 +75,20 @@ export function parseSupervisorIntent(message: string): SupervisorIntent | null 
     normalized === 'resume the reviewer'
   ) {
     return { action: 'resume-run' };
+  }
+
+  if (
+    normalized === 'deploy' ||
+    normalized === 'deploy now' ||
+    normalized === 'finish build' ||
+    normalized === 'finish the build' ||
+    normalized === 'complete build' ||
+    normalized === 'complete the build' ||
+    normalized === 'approve deploy' ||
+    normalized === 'approve deployment' ||
+    /\b(deploy|finish|complete)\b.*\b(audit|build|run|now)\b/.test(normalized)
+  ) {
+    return { action: 'audit-deploy' };
   }
 
   if (

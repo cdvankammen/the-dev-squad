@@ -10,6 +10,7 @@ import {
   sendSupervisorMessage,
   type SkillMode,
 } from '@/lib/skill-runtime';
+import { describeModelListing, getProviderDefinition } from '@/lib/provider-catalog';
 
 type JsonRpcId = string | number | null;
 
@@ -99,6 +100,17 @@ const TOOLS = [
         mode: { type: 'string', enum: ['pipeline', 'manual'] },
         after: { type: 'number' },
         limit: { type: 'number' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'devsquad.provider_models',
+    description: 'List models for a provider so an outer shell can choose model/agent overrides before messaging Supervisor S.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string' },
       },
       additionalProperties: false,
     },
@@ -223,6 +235,21 @@ export async function POST(req: NextRequest) {
       const limit = normalizeLimit(args.limit);
       const state = await fetchPipelineState(origin, mode);
       return rpcResult(id, toolResult({ success: true, mode, updates: buildUpdates(state, after, limit) }));
+    }
+
+    if (toolName === 'devsquad.provider_models') {
+      const provider = getProviderDefinition(typeof args.provider === 'string' ? args.provider : 'lm-studio');
+      const result = describeModelListing(provider.id);
+      return rpcResult(id, toolResult({
+        success: result.status === 'ok',
+        providerId: provider.id,
+        provider,
+        status: result.status,
+        error: result.error,
+        endpoint: result.endpoint,
+        models: result.models,
+        note: 'Use these model ids in devsquad.supervisor_message model and agentModels arguments. LM Studio/Ollama model switches between >8B models are cooldown-protected by the orchestrator.',
+      }));
     }
 
     return rpcError(id, -32601, `Unknown tool: ${toolName}`);
