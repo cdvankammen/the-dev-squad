@@ -19,6 +19,10 @@ export interface ProviderModel {
   paramsString?: string;
   sizeB?: number;
   cooldownExempt?: boolean;
+  capability?: 'generation' | 'embeddings' | 'unknown';
+  loaded?: boolean;
+  ready?: boolean;
+  unavailableReason?: string;
 }
 
 export interface OpenCodeProviderInfo {
@@ -32,6 +36,10 @@ export interface ProviderModelListResult {
   status: 'ok' | 'empty' | 'error';
   error?: string;
   endpoint?: string;
+  readyModels?: ProviderModel[];
+  recommendedModel?: ProviderModel;
+  preflightOk?: boolean;
+  preflightMessage?: string;
 }
 
 function normalizeModel(model: ProviderModel): ProviderModel | null {
@@ -158,9 +166,137 @@ function estimateModelSizeBFromText(...parts: unknown[]): number | undefined {
   return undefined;
 }
 
+function providerNeedsStrictReadyCheck(providerId: ProviderId): boolean {
+  return providerId === 'lm-studio' || providerId === 'openwebui' || providerId === 'ollama';
+}
+
+function normalizeCapability(record?: Record<string, unknown>, id?: string, label?: string): ProviderModel['capability'] {
+  const explicit = String(record?.type || record?.capability || record?.object || '').trim().toLowerCase();
+  const haystack = [id, label, record?.display_name, record?.name, record?.model]
+    .map((part) => String(part || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+
+  if (explicit.includes('embed') || /\bembed(ding|s)?\b|nomic-embed/.test(haystack)) {
+    return 'embeddings';
+  }
+  if (explicit.includes('llm') || explicit.includes('chat') || explicit.includes('completion')) {
+    return 'generation';
+  }
+  return 'generation';
+}
+
+function normalizeLoadedState(record?: Record<string, unknown>): boolean | undefined {
+  const loadedInstances = Array.isArray(record?.loaded_instances) ? record.loaded_instances : null;
+  if (loadedInstances) return loadedInstances.length > 0;
+
+  const state = String(record?.state || record?.status || '').trim().toLowerCase();
+  if (!state) return undefined;
+  if (['loaded', 'ready', 'running', 'active'].some((token) => state.includes(token))) return true;
+  if (['not-loaded', 'unloaded', 'stopped', 'inactive'].some((token) => state.includes(token))) return false;
+  return undefined;
+}
+
+export function isRunnableProviderModel(providerId: ProviderId, model: ProviderModel): boolean {
+  if (model.capability === 'embeddings') return false;
+  if (providerId === 'lm-studio') return model.ready === true;
+  if (providerNeedsStrictReadyCheck(providerId)) return model.ready !== false;
+  return true;
+}
+
+function pickRecommendedModel(providerId: ProviderId, models: ProviderModel[]): ProviderModel | undefined {
+  const runnable = models.filter((model) => isRunnableProviderModel(providerId, model));
+  const candidates = runnable.length > 0 ? runnable : models.filter((model) => model.capability !== 'embeddings');
+  if (candidates.length === 0) return undefined;
+
+  return [...candidates].sort((left, right) => {
+    const leftStrictPenalty = left.ready === false ? 1 : 0;
+    const rightStrictPenalty = right.ready === false ? 1 : 0;
+    if (leftStrictPenalty !== rightStrictPenalty) return leftStrictPenalty - rightStrictPenalty;
+
+    const leftCooldownPenalty = left.cooldownExempt === false ? 1 : 0;
+    const rightCooldownPenalty = right.cooldownExempt === false ? 1 : 0;
+    if (leftCooldownPenalty !== rightCooldownPenalty) return leftCooldownPenalty - rightCooldownPenalty;
+
+    const leftSize = Number.isFinite(left.sizeB) ? Number(left.sizeB) : Number.POSITIVE_INFINITY;
+    const rightSize = Number.isFinite(right.sizeB) ? Number(right.sizeB) : Number.POSITIVE_INFINITY;
+    if (leftSize !== rightSize) return leftSize - rightSize;
+
+    return left.label.localeCompare(right.label);
+  })[0];
+}
+
+function finalizeModelListResult(providerId: ProviderId, base: ProviderModelListResult): ProviderModelListResult {
+  const models = dedupeModels(base.models || []);
+  const readyModels = models.filter((model) => isRunnableProviderModel(providerId, model));
+  const recommendedModel = pickRecommendedModel(providerId, models);
+
+  if (base.status === 'error') {
+    return {
+      ...base,
+      models,
+      readyModels,
+      recommendedModel,
+      preflightOk: false,
+      preflightMessage: base.error || `Could not reach ${getProviderDefinition(providerId).label}.`,
+    };
+  }
+
+  if (!providerNeedsStrictReadyCheck(providerId)) {
+    return {
+      ...base,
+      models,
+      readyModels,
+      recommendedModel,
+      preflightOk: models.length > 0,
+      preflightMessage:
+        models.length > 0
+          ? `${models.length} model${models.length === 1 ? '' : 's'} available.`
+          : base.error || 'No models were returned.',
+    };
+  }
+
+  if (readyModels.length > 0) {
+    return {
+      ...base,
+      models,
+      readyModels,
+      recommendedModel,
+      preflightOk: true,
+      preflightMessage: recommendedModel
+        ? `${readyModels.length} usable model${readyModels.length === 1 ? '' : 's'} ready. Recommended: ${recommendedModel.label}.`
+        : `${readyModels.length} usable model${readyModels.length === 1 ? '' : 's'} ready.`,
+    };
+  }
+
+  const provider = getProviderDefinition(providerId);
+  return {
+    ...base,
+    models,
+    readyModels,
+    recommendedModel,
+    preflightOk: false,
+    preflightMessage:
+      providerId === 'lm-studio'
+        ? 'LM Studio is reachable, but no loaded generation model is ready. Load a chat model in LM Studio before starting.'
+        : providerId === 'openwebui'
+          ? 'Open WebUI responded, but no usable generation model is available yet.'
+          : providerId === 'ollama'
+            ? 'Ollama responded, but no usable generation model is available yet.'
+            : base.error || `No usable generation model is ready for ${provider.label}.`,
+  };
+}
+
 function buildProviderModel(providerId: ProviderId, id: string, label?: string, record?: Record<string, unknown>): ProviderModel {
   const paramsString = String(record?.params_string || record?.parameter_size || '').trim() || undefined;
   const sizeB = estimateModelSizeBFromText(paramsString, id, label, record?.display_name, record?.name);
+  const capability = normalizeCapability(record, id, label);
+  const loaded = normalizeLoadedState(record);
+  const ready = capability === 'generation'
+    ? providerId === 'lm-studio'
+      ? loaded === true
+      : loaded !== false
+    : false;
   return {
     id,
     label: String(label || id).trim() || id,
@@ -168,6 +304,14 @@ function buildProviderModel(providerId: ProviderId, id: string, label?: string, 
     source: getModelSource(providerId),
     ...(paramsString ? { paramsString } : {}),
     ...(sizeB !== undefined ? { sizeB, cooldownExempt: sizeB <= 8 } : {}),
+    ...(capability ? { capability } : {}),
+    ...(loaded !== undefined ? { loaded } : {}),
+    ...(capability !== 'unknown' ? { ready } : {}),
+    ...(capability === 'embeddings'
+      ? { unavailableReason: 'Embedding models cannot run the pipeline.' }
+      : providerId === 'lm-studio' && loaded === false
+        ? { unavailableReason: 'Model is listed in LM Studio but not loaded.' }
+        : {}),
   };
 }
 
@@ -249,7 +393,7 @@ function listOpenAiCompatModelsDetailed(providerId: ProviderId, endpoints: strin
       const parsed = readJsonFromUrl(endpoint, providerId);
       const mapped = dedupeModels(mapModelList(providerId, parsed));
       if (mapped.length > 0) {
-        return { models: mapped, status: 'ok', endpoint };
+        return finalizeModelListResult(providerId, { models: mapped, status: 'ok', endpoint });
       }
       sawReachableEmpty = true;
     } catch (error) {
@@ -259,18 +403,18 @@ function listOpenAiCompatModelsDetailed(providerId: ProviderId, endpoints: strin
   }
 
   if (sawReachableEmpty) {
-    return {
+    return finalizeModelListResult(providerId, {
       models: [],
       status: 'empty',
       error: lastError || undefined,
-    };
+    });
   }
 
-  return {
+  return finalizeModelListResult(providerId, {
     models: [],
     status: 'error',
     error: lastError || 'Could not reach any model discovery endpoint.',
-  };
+  });
 }
 
 function listOpenAiCompatModels(providerId: ProviderId, endpoints: string[]) {
@@ -296,7 +440,7 @@ export function listModels(providerId?: string): ProviderModel[] {
 export function describeModelListing(providerId?: string): ProviderModelListResult {
   const resolved = getProviderDefinition(providerId);
   if (resolved.id === 'claude') {
-    return { models: dedupeModels([...CLAUDE_MODELS]), status: 'ok' };
+    return finalizeModelListResult(resolved.id, { models: dedupeModels([...CLAUDE_MODELS]), status: 'ok' });
   }
 
   if (resolved.id === 'lm-studio') {
@@ -332,7 +476,7 @@ export function describeModelListing(providerId?: string): ProviderModelListResu
   }
 
   const output = runCommand('opencode', ['models']);
-  return {
+  return finalizeModelListResult(resolved.id, {
     models: dedupeModels(output
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -344,7 +488,7 @@ export function describeModelListing(providerId?: string): ProviderModelListResu
         source: 'opencode' as const,
       }))),
     status: 'ok',
-  };
+  });
 }
 
 export function inspectOpenCodeProviders(): OpenCodeProviderInfo {

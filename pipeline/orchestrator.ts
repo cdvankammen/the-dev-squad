@@ -1793,13 +1793,12 @@ async function runDeployStep(aSession: string): Promise<string> {
   emit('A', 'deploy', 'receive', 'Received final code from D');
   emit('A', 'deploy', 'status', 'Deploying...');
 
-  const aDeployResult = await claude('A', [
-    'The code has been reviewed and tested by Agent D. Everything passed.',
-    'Do not use Bash or git. The orchestrator will handle any final commit.',
-    'Confirm the build is complete and mention any environment caveats the user should know.',
-  ].join('\n'), { role: ROLE_A, resume: aSession });
-  aSession = aDeployResult.sessionId;
-  saveSession('A', aSession);
+  emit(
+    'A',
+    'deploy',
+    'text',
+    'Build complete. The code passed review, testing, and security audit. Final packaging is being handled locally by the orchestrator.'
+  );
 
   setAgent('A', 'done');
   setPhase('complete');

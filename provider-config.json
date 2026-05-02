@@ -14,8 +14,8 @@
   "openwebui": {
     "id": "openwebui",
     "host": "10.2.0.22",
-    "port": 8080,
-    "apiKey": "sk-89e75a3b0def449f8f3ff5cb68f43022",
-    "baseUrl": "http://10.2.0.22:8080"
+    "port": 3000,
+    "apiKey": "sk-26ccbe82c7ac42b29b3b4d5085aac270",
+    "baseUrl": "http://10.2.0.22:3000"
   }
 }

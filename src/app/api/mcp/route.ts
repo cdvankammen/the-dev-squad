@@ -7,7 +7,9 @@ import {
   getRequestOrigin,
   normalizeAfter,
   normalizeLimit,
+  resetSupervisorRun,
   sendSupervisorMessage,
+  startSupervisorRun,
   type SkillMode,
 } from '@/lib/skill-runtime';
 import { describeModelListing, getProviderDefinition } from '@/lib/provider-catalog';
@@ -111,6 +113,36 @@ const TOOLS = [
       type: 'object',
       properties: {
         provider: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'devsquad.start_run',
+    description: 'Structured Supervisor start tool. Optionally stage a concept, then start plan-only or full-build with explicit settings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        concept: { type: 'string' },
+        model: { type: 'string' },
+        provider: { type: 'string' },
+        workingDir: { type: 'string' },
+        securityMode: { type: 'string', enum: ['fast', 'strict'] },
+        permissionMode: { type: 'string', enum: ['auto', 'plan', 'dangerously-skip-permissions'] },
+        runGoal: { type: 'string', enum: ['full-build', 'plan-only'] },
+        runFinalAudit: { type: 'boolean' },
+        agentModels: { type: 'object', additionalProperties: { type: 'string' } },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'devsquad.pipeline_reset',
+    description: 'Reset pipeline or manual state when a stale run or plan needs to be cleared before starting again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: ['pipeline', 'manual'] },
       },
       additionalProperties: false,
     },
@@ -248,8 +280,46 @@ export async function POST(req: NextRequest) {
         error: result.error,
         endpoint: result.endpoint,
         models: result.models,
+        readyModels: result.readyModels || [],
+        recommendedModel: result.recommendedModel || null,
+        preflightOk: result.preflightOk !== false,
+        preflightMessage: result.preflightMessage || '',
         note: 'Use these model ids in devsquad.supervisor_message model and agentModels arguments. LM Studio/Ollama model switches between >8B models are cooldown-protected by the orchestrator.',
       }));
+    }
+
+    if (toolName === 'devsquad.start_run') {
+      const result = await startSupervisorRun(origin, {
+        concept: typeof args.concept === 'string' ? args.concept : undefined,
+        model: typeof args.model === 'string' ? args.model : undefined,
+        provider: typeof args.provider === 'string' ? args.provider : undefined,
+        workingDir: typeof args.workingDir === 'string' ? args.workingDir : undefined,
+        securityMode: args.securityMode === 'strict' ? 'strict' : args.securityMode === 'fast' ? 'fast' : undefined,
+        permissionMode:
+          args.permissionMode === 'plan' || args.permissionMode === 'dangerously-skip-permissions' || args.permissionMode === 'auto'
+            ? args.permissionMode
+            : undefined,
+        runGoal: args.runGoal === 'plan-only' ? 'plan-only' : args.runGoal === 'full-build' ? 'full-build' : undefined,
+        runFinalAudit: args.runFinalAudit === true,
+        agentModels:
+          args.agentModels && typeof args.agentModels === 'object' && !Array.isArray(args.agentModels)
+            ? (args.agentModels as Record<string, string>)
+            : undefined,
+      });
+
+      return rpcResult(id, toolResult({
+        success: true,
+        targetAgent: 'S',
+        response: result.response,
+        state: result.state,
+        note: 'This structured tool stages the concept if provided, then starts the run without relying on natural-language start parsing.',
+      }));
+    }
+
+    if (toolName === 'devsquad.pipeline_reset') {
+      const mode = resolveMode(args.mode);
+      const result = await resetSupervisorRun(origin, mode);
+      return rpcResult(id, toolResult({ success: true, mode, response: result.response, state: result.state || null }));
     }
 
     return rpcError(id, -32601, `Unknown tool: ${toolName}`);

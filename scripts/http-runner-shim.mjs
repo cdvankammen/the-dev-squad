@@ -888,6 +888,52 @@ function getWebToolDecision(toolName) {
   };
 }
 
+function globPatternToRegex(pattern) {
+  const input = String(pattern || '');
+  let output = '^';
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    const next = input[i + 1];
+
+    if (ch === '*') {
+      if (next === '*') {
+        output += '.*';
+        i += 1;
+      } else {
+        output += '[^/]*';
+      }
+      continue;
+    }
+
+    if (ch === '?') {
+      output += '.';
+      continue;
+    }
+
+    if (ch === '{') {
+      const end = input.indexOf('}', i + 1);
+      if (end !== -1) {
+        const options = input
+          .slice(i + 1, end)
+          .split(',')
+          .map((part) => part.trim().replace(/[|\{}()[\]^$+*?.]/g, '\\$&'))
+          .filter(Boolean);
+        if (options.length > 0) {
+          output += '(?:' + options.join('|') + ')';
+          i = end;
+          continue;
+        }
+      }
+    }
+
+    output += ch.replace(/[|\{}()[\]^$+*?.]/g, '\\$&');
+  }
+
+  output += '$';
+  return new RegExp(output);
+}
+
 function stripHtml(html) {
   return String(html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -1062,13 +1108,7 @@ async function executeTool(name, input) {
           const searchGuard = getSearchRootDecision(process.cwd());
           if (!searchGuard.allow) return { is_error: true, content: searchGuard.message };
 
-          // Convert simple glob to a regex (supports **, *, ?)
-          const escapeRegex = (s) => s.replace(/[.+^${}()|[\\]\\\\]/g, '\\$&');
-          let regexStr = '^' + escapeRegex(pattern)
-            .replace(/\\\*\\\*/g, '.*')
-            .replace(/\\\*/g, '[^/]*')
-            .replace(/\\\?/g, '.') + '$';
-          const re = new RegExp(regexStr);
+          const re = globPatternToRegex(pattern);
 
           // Walk directory and match
           const root = process.cwd();

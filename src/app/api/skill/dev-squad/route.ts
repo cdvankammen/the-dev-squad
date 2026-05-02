@@ -7,7 +7,9 @@ import {
   getRequestOrigin,
   normalizeAfter,
   normalizeLimit,
+  resetSupervisorRun,
   sendSupervisorMessage,
+  startSupervisorRun,
   type SkillMode,
 } from '@/lib/skill-runtime';
 import { describeModelListing, getProviderDefinition } from '@/lib/provider-catalog';
@@ -61,6 +63,10 @@ export async function GET(req: NextRequest) {
       error: result.error,
       endpoint: result.endpoint,
       models: result.models,
+      readyModels: result.readyModels || [],
+      recommendedModel: result.recommendedModel || null,
+      preflightOk: result.preflightOk !== false,
+      preflightMessage: result.preflightMessage || '',
       note: 'Use these model ids in supervisor_message model and agentModels fields. LM Studio/Ollama >8B model switches are cooldown-protected by the orchestrator.',
     });
   }
@@ -71,6 +77,8 @@ export async function GET(req: NextRequest) {
     metadata: buildSkillMetadata(),
     usage: {
       send: 'POST /api/skill/dev-squad with {"action":"supervisor_message","message":"..."}',
+      startRun: 'POST /api/skill/dev-squad with {"action":"start_run","concept":"...","provider":"lm-studio"}',
+      reset: 'POST /api/skill/dev-squad with {"action":"pipeline_reset","mode":"pipeline"}',
       state: 'GET /api/skill/dev-squad?action=state&mode=pipeline',
       updates: 'GET /api/skill/dev-squad?action=updates&mode=pipeline&after=0&limit=50',
       providerModels: 'GET /api/skill/dev-squad?action=provider_models&provider=lm-studio',
@@ -126,15 +134,61 @@ export async function POST(req: NextRequest) {
       error: result.error,
       endpoint: result.endpoint,
       models: result.models,
+      readyModels: result.readyModels || [],
+      recommendedModel: result.recommendedModel || null,
+      preflightOk: result.preflightOk !== false,
+      preflightMessage: result.preflightMessage || '',
       note: 'Use these model ids in supervisor_message model and agentModels fields. LM Studio/Ollama >8B model switches are cooldown-protected by the orchestrator.',
     });
+  }
+
+  if (action === 'start_run') {
+    try {
+      const result = await startSupervisorRun(origin, {
+        concept: typeof body.concept === 'string' ? body.concept : undefined,
+        model: typeof body.model === 'string' ? body.model : undefined,
+        provider: typeof body.provider === 'string' ? body.provider : undefined,
+        workingDir: typeof body.workingDir === 'string' ? body.workingDir : undefined,
+        securityMode: body.securityMode === 'strict' ? 'strict' : body.securityMode === 'fast' ? 'fast' : undefined,
+        permissionMode:
+          body.permissionMode === 'plan' || body.permissionMode === 'dangerously-skip-permissions' || body.permissionMode === 'auto'
+            ? body.permissionMode
+            : undefined,
+        runGoal: body.runGoal === 'plan-only' ? 'plan-only' : body.runGoal === 'full-build' ? 'full-build' : undefined,
+        runFinalAudit: body.runFinalAudit === true,
+        agentModels:
+          body.agentModels && typeof body.agentModels === 'object' && !Array.isArray(body.agentModels)
+            ? (body.agentModels as Record<string, string>)
+            : undefined,
+      });
+
+      return NextResponse.json({
+        success: true,
+        mode: 'pipeline',
+        targetAgent: 'S',
+        response: result.response,
+        state: result.state,
+        note: 'This structured action stages the concept if provided, then starts the run without relying on natural-language start parsing.',
+      });
+    } catch (error) {
+      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    }
+  }
+
+  if (action === 'pipeline_reset') {
+    try {
+      const result = await resetSupervisorRun(origin, mode);
+      return NextResponse.json({ success: true, mode, response: result.response, state: result.state || null });
+    } catch (error) {
+      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    }
   }
 
   if (action !== 'supervisor_message') {
     return NextResponse.json({
       success: false,
       error: `Unknown action: ${action}`,
-      allowedActions: ['supervisor_message', 'pipeline_state', 'pipeline_updates', 'provider_models'],
+      allowedActions: ['supervisor_message', 'start_run', 'pipeline_reset', 'pipeline_state', 'pipeline_updates', 'provider_models'],
     }, { status: 400 });
   }
 

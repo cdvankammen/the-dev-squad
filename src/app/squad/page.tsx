@@ -200,12 +200,15 @@ export default function SquadPage() {
       }));
   const modelOptions = models.length > 0
     ? models
-    : MODEL_OPTIONS.map((opt) => ({
+    : selectedProvider === 'claude'
+    ? MODEL_OPTIONS.map((opt) => ({
         id: opt.value,
         label: opt.label,
         providerId: selectedProvider,
         source: 'static',
-      }));
+      }))
+    : [];
+  const selectedModelValue = modelOptions.some((opt) => opt.id === selectedModel) ? selectedModel : '';
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
   const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
@@ -259,7 +262,8 @@ export default function SquadPage() {
   async function handleSend() {
     const message = chatInput.trim();
     if (!message) return;
-    if (sendingAgents.has(selectedAgent)) {
+    const hasQueuedDispatch = AGENT_ORDER.some((agent) => queueDispatching[agent]);
+    if (sendingAgents.size > 0 || hasQueuedDispatch) {
       setQueuedMessages((prev) => ({
         ...prev,
         [selectedAgent]: [...prev[selectedAgent], { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, text: message, isEditing: false }],
@@ -275,7 +279,8 @@ export default function SquadPage() {
 
   async function sendQueuedMessage(agent: AgentId, itemId: string) {
     const queued = queuedMessages[agent].find((item) => item.id === itemId);
-    if (!queued || sendingAgents.has(agent) || queueDispatching[agent]) return;
+    const hasQueuedDispatch = AGENT_ORDER.some((candidate) => queueDispatching[candidate]);
+    if (!queued || sendingAgents.size > 0 || hasQueuedDispatch) return;
     setQueueDispatching((prev) => ({ ...prev, [agent]: true }));
     try {
       const response = await dispatchDirectMessage(agent, queued.text);
@@ -312,8 +317,11 @@ export default function SquadPage() {
   }
 
   useEffect(() => {
+    if (sendingAgents.size > 0) return;
+    if (AGENT_ORDER.some((agent) => queueDispatching[agent])) return;
+
     const nextAgent = AGENT_ORDER.find((agent) => {
-      if (sendingAgents.has(agent) || queueDispatching[agent]) return false;
+      if (queueDispatching[agent]) return false;
       const nextQueued = queuedMessages[agent]?.[0];
       return Boolean(nextQueued && !nextQueued.isEditing);
     });
@@ -422,10 +430,16 @@ export default function SquadPage() {
                     </select>
                     <select
                       title="Model"
-                      value={selectedModel}
+                      value={selectedModelValue}
                       onChange={(e) => setSelectedModel(e.target.value)}
+                      disabled={providerStatusKind === 'loading' && modelOptions.length === 0}
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 focus:border-blue-600 focus:outline-none"
                     >
+                      {modelOptions.length === 0 && (
+                        <option value="" className="bg-[#121522]">
+                          Loading provider models…
+                        </option>
+                      )}
                       {modelOptions.map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-[#121522]">
                           {opt.label}
@@ -484,9 +498,14 @@ export default function SquadPage() {
                           title="API Key"
                           value={providerApiKey}
                           onChange={(e) => setProviderApiKey(e.target.value)}
-                          placeholder={selectedProvider === 'openwebui' ? 'Example: sk-...' : 'Example: provider API key'}
+                          placeholder={selectedProvider === 'openwebui' ? 'Paste the Open WebUI JWT token here' : 'Example: provider API key'}
                           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
                         />
+                        {selectedProvider === 'openwebui' && (
+                          <p className="text-[9px] text-slate-500">
+                            Use the JWT token from Open WebUI Account → API keys. The visible API key may not authorize model discovery.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

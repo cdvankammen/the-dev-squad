@@ -38,6 +38,10 @@ export interface ProviderModelSummary {
   paramsString?: string;
   sizeB?: number;
   cooldownExempt?: boolean;
+  capability?: 'generation' | 'embeddings' | 'unknown';
+  loaded?: boolean;
+  ready?: boolean;
+  unavailableReason?: string;
 }
 
 export interface UseProviderRuntimeOptions {
@@ -99,6 +103,12 @@ function dedupeModels(input: ProviderModelSummary[]): ProviderModelSummary[] {
   return output;
 }
 
+function resolveProviderDefaultModel(providerId: string, providerDefaultModel: string | undefined, appDefaultProvider: string, appDefaultModel: string) {
+  const providerDefault = String(providerDefaultModel || '').trim();
+  if (providerDefault) return providerDefault;
+  return providerId === appDefaultProvider ? String(appDefaultModel || '').trim() : '';
+}
+
 export function useProviderRuntime({
   defaultProvider = 'claude',
   defaultModel = '',
@@ -120,11 +130,16 @@ export function useProviderRuntime({
   const refreshSyncKeyRef = useRef('');
   const bootstrapRef = useRef(false);
   const lastPrimaryModelRefreshRef = useRef('');
+  const selectedModelRef = useRef(defaultModel);
 
   const selectedProviderDefinition = useMemo(
     () => providers.find((provider) => provider.id === selectedProvider) || null,
     [providers, selectedProvider]
   );
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
 
   const providerMode = selectedProviderDefinition?.mode || providerModeFallback(selectedProvider);
   const availableModels = models.length > 0 ? models : [];
@@ -163,24 +178,35 @@ export function useProviderRuntime({
       const data = await res.json();
       const routeStatus = String(data?.status || '').trim();
       const routeError = String(data?.error || '').trim();
+      const preflightOk = data?.preflightOk !== false;
+      const preflightMessage = String(data?.preflightMessage || '').trim();
       const nextModels = dedupeModels(
         Array.isArray(data?.models) ? (data.models as ProviderModelSummary[]) : []
       );
       const modelIds = new Set(nextModels.map((model) => String(model.id || '').trim()).filter(Boolean));
       setModels(nextModels);
 
-      const nextDefault = String(data?.defaultModel || data?.provider?.defaultModel || '').trim();
+      const nextDefault = resolveProviderDefaultModel(
+        resolvedProvider,
+        String(data?.defaultModel || data?.provider?.defaultModel || '').trim(),
+        defaultProvider,
+        defaultModel
+      );
+      const recommended = String(data?.recommendedModel?.id || '').trim();
       const stored = readModelSelection(resolvedProvider, '');
-      const current = String(selectedModel || '').trim();
+      const current = resolvedProvider === selectedProvider
+        ? String(selectedModelRef.current || '').trim()
+        : '';
       const firstAvailable = nextModels[0]?.id ? String(nextModels[0].id) : '';
 
       const nextSelected =
         (stored && modelIds.has(stored) && stored) ||
         (current && modelIds.has(current) && current) ||
+        (recommended && modelIds.has(recommended) && recommended) ||
         (nextDefault && modelIds.has(nextDefault) && nextDefault) ||
         firstAvailable ||
+        recommended ||
         nextDefault ||
-        defaultModel ||
         '';
 
       setSelectedModelState(nextSelected);
@@ -196,22 +222,25 @@ export function useProviderRuntime({
         return normalized;
       });
 
-      if (nextModels.length > 0) {
+      if (!preflightOk) {
+        setProviderStatusKind('error');
+        setProviderStatusMessage(preflightMessage || routeError || 'Provider responded, but no usable generation model is ready.');
+      } else if (nextModels.length > 0) {
         setProviderStatusKind('ok');
-        setProviderStatusMessage(`${nextModels.length} model${nextModels.length === 1 ? '' : 's'} available.`);
+        setProviderStatusMessage(preflightMessage || `${nextModels.length} model${nextModels.length === 1 ? '' : 's'} available.`);
       } else if (routeStatus === 'error' || !!routeError) {
         setProviderStatusKind('error');
         setProviderStatusMessage(routeError || 'Could not reach the provider host. Check the host, port, and API key.');
       } else {
         setProviderStatusKind('empty');
-        setProviderStatusMessage(routeError || 'Provider responded, but no models were returned.');
+        setProviderStatusMessage(preflightMessage || routeError || 'Provider responded, but no models were returned.');
       }
     } catch {
       setModels([]);
       setProviderStatusKind('error');
       setProviderStatusMessage('Could not reach the provider host. Check the host, port, and API key.');
     }
-  }, [defaultModel, selectedModel, selectedProvider]);
+  }, [defaultModel, defaultProvider, selectedProvider]);
 
   useEffect(() => {
     if (bootstrapRef.current) return;
@@ -220,13 +249,14 @@ export function useProviderRuntime({
     const storedProvider = readProviderSelection(defaultProvider);
     const runtime = readProviderRuntimeSettings(storedProvider);
     const runtimeUrlParts = parseBaseUrlParts(runtime.baseUrl);
+    const initialDefaultModel = resolveProviderDefaultModel(storedProvider, '', defaultProvider, defaultModel);
     setSelectedProviderState(storedProvider);
     setSelectedWorkingDirState(runtime.workingDir || defaultWorkingDir);
     setProviderHostState(runtimeUrlParts.host || runtime.host || '');
     setProviderPortState(runtimeUrlParts.port || runtime.port || '');
     setProviderApiKeyState(runtime.apiKey || '');
-    const storedModel = readModelSelection(storedProvider, defaultModel);
-    setSelectedModelState(storedModel || defaultModel);
+    const storedModel = readModelSelection(storedProvider, initialDefaultModel);
+    setSelectedModelState(storedModel || initialDefaultModel);
     setAgentModelsState(readAgentModelOverrides(storedProvider) as Partial<Record<AgentId, string>>);
     setHydrated(true);
 
@@ -240,15 +270,23 @@ export function useProviderRuntime({
     const provider = selectedProviderDefinition;
     const fallbackUrl = runtime.baseUrl || provider?.config?.baseUrl || '';
     const parsedUrl = parseBaseUrlParts(fallbackUrl);
+    const providerDefaultModel = resolveProviderDefaultModel(
+      selectedProvider,
+      provider?.defaultModel,
+      defaultProvider,
+      defaultModel
+    );
 
+    setModels([]);
+    setProviderStatusKind('loading');
+    setProviderStatusMessage('Checking provider and loading models…');
     setSelectedWorkingDirState(runtime.workingDir || defaultWorkingDir);
     setProviderHostState(parsedUrl.host || runtime.host || provider?.config?.host || '');
     setProviderPortState(parsedUrl.port || runtime.port || (provider?.config?.port ? String(provider.config.port) : ''));
     setProviderApiKeyState(runtime.apiKey || provider?.config?.apiKey || '');
     setSelectedModelState(
-      readModelSelection(selectedProvider, provider?.defaultModel || defaultModel) ||
-      provider?.defaultModel ||
-      defaultModel
+      readModelSelection(selectedProvider, providerDefaultModel) ||
+      providerDefaultModel
     );
     setAgentModelsState(readAgentModelOverrides(selectedProvider) as Partial<Record<AgentId, string>>);
 
@@ -256,7 +294,7 @@ export function useProviderRuntime({
       lastPrimaryModelRefreshRef.current = selectedProvider;
       void refreshModels(selectedProvider);
     }
-  }, [defaultModel, defaultWorkingDir, hydrated, refreshModels, selectedProvider, selectedProviderDefinition]);
+  }, [defaultModel, defaultProvider, defaultWorkingDir, hydrated, refreshModels, selectedProvider, selectedProviderDefinition]);
 
   useEffect(() => {
     if (!hydrated) return;

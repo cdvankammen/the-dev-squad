@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { rmSync, mkdirSync } from 'node:fs';
 import net from 'node:net';
 import { join, resolve } from 'node:path';
@@ -21,8 +21,55 @@ async function findOpenPort(startPort) {
   return startPort;
 }
 
+async function reapPort(port) {
+  const result = spawnSync('lsof', ['-ti', `tcp:${port}`], { encoding: 'utf8' });
+  if (result.error) {
+    console.warn(`[dev] warning: could not inspect listeners on port ${port}: ${result.error.message}`);
+    return;
+  }
+
+  const pids = [...new Set(
+    String(result.stdout || '')
+      .split(/\s+/)
+      .map((pid) => Number.parseInt(pid, 10))
+      .filter(Number.isFinite)
+  )];
+
+  if (pids.length === 0) return;
+
+  console.log(`[dev] stopping existing listener(s) on port ${port}: ${pids.join(', ')}`);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // ignore processes that already exited or cannot be signaled
+    }
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (await isPortFree(port)) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+  }
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await isPortFree(port)) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+
+  throw new Error(`Port ${port} is still in use after attempting to stop existing listeners.`);
+}
+
 const preferredPort = Number(process.env.PORT || 3000);
-const port = await findOpenPort(Number.isFinite(preferredPort) ? preferredPort : 3000);
+const port = Number.isFinite(preferredPort) ? preferredPort : 3000;
+await reapPort(port);
 const usesDefaultDistRoot = !process.env.DEV_SQUAD_NEXT_DIST_ROOT;
 const distRoot = process.env.DEV_SQUAD_NEXT_DIST_ROOT || '.next-runtime';
 const distDir = join(distRoot, `port-${port}`);

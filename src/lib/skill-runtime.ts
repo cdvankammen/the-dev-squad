@@ -16,6 +16,18 @@ export interface SupervisorMessageArgs {
   agentModels?: Record<string, string>;
 }
 
+export interface SupervisorStartArgs {
+  concept?: string;
+  model?: string;
+  provider?: string;
+  workingDir?: string;
+  securityMode?: 'fast' | 'strict';
+  permissionMode?: 'auto' | 'plan' | 'dangerously-skip-permissions';
+  runGoal?: 'full-build' | 'plan-only';
+  runFinalAudit?: boolean;
+  agentModels?: Record<string, string>;
+}
+
 export interface SkillAuthResult {
   ok: boolean;
   message?: string;
@@ -127,6 +139,20 @@ async function parseJsonSafe(res: Response): Promise<unknown> {
   }
 }
 
+async function postInternalJson(origin: string, path: string, body: Record<string, unknown>) {
+  const res = await fetch(`${origin}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...buildInternalAuthHeaders(),
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  return { res, data: await parseJsonSafe(res) };
+}
+
 export async function fetchPipelineState(origin: string, mode: SkillMode = 'pipeline'): Promise<Record<string, unknown>> {
   const res = await fetch(`${origin}/api/state?mode=${encodeURIComponent(mode)}`, {
     method: 'GET',
@@ -204,6 +230,69 @@ export async function sendSupervisorMessage(
   return { response, state };
 }
 
+export async function startSupervisorRun(
+  origin: string,
+  args: SupervisorStartArgs,
+): Promise<{ response: unknown; state: Record<string, unknown> }> {
+  const concept = String(args.concept || '').trim();
+
+  if (concept) {
+    await sendSupervisorMessage(origin, {
+      message: concept,
+      mode: 'pipeline',
+      model: args.model,
+      provider: args.provider,
+      workingDir: args.workingDir,
+      securityMode: args.securityMode,
+      permissionMode: args.permissionMode,
+      runGoal: args.runGoal,
+      runFinalAudit: args.runFinalAudit,
+      agentModels: args.agentModels,
+    });
+  }
+
+  const { res, data } = await postInternalJson(origin, '/api/start-pipeline', {
+    securityMode: args.securityMode,
+    permissionMode: args.permissionMode,
+    runGoal: args.runGoal,
+    runFinalAudit: args.runFinalAudit,
+    model: args.model,
+    provider: args.provider,
+    workingDir: args.workingDir,
+    agentModels: args.agentModels,
+  });
+
+  if (!res.ok || (data && typeof data === 'object' && (data as { success?: boolean }).success === false)) {
+    const errorMessage = data && typeof data === 'object' && 'error' in data ? String((data as { error?: unknown }).error || '') : '';
+    throw new Error(errorMessage || `Start run failed (${res.status})`);
+  }
+
+  const state = await fetchPipelineState(origin, 'pipeline');
+  return { response: data, state };
+}
+
+export async function resetSupervisorRun(
+  origin: string,
+  mode: SkillMode = 'pipeline',
+): Promise<{ response: unknown; state?: Record<string, unknown> }> {
+  const { res, data } = await postInternalJson(origin, '/api/reset', { mode });
+  if (!res.ok || (data && typeof data === 'object' && (data as { ok?: boolean }).ok === false)) {
+    const errorMessage = data && typeof data === 'object' && 'error' in data ? String((data as { error?: unknown }).error || '') : '';
+    throw new Error(errorMessage || `Reset failed (${res.status})`);
+  }
+
+  if (mode === 'manual') {
+    return { response: data };
+  }
+
+  try {
+    const state = await fetchPipelineState(origin, 'pipeline');
+    return { response: data, state };
+  } catch {
+    return { response: data };
+  }
+}
+
 export function buildSkillMetadata() {
   return {
     name: 'dev-squad-skill',
@@ -225,6 +314,18 @@ export function buildSkillMetadata() {
       {
         name: 'devsquad.pipeline_updates',
         description: 'Poll incremental event updates since a given index.',
+      },
+      {
+        name: 'devsquad.provider_models',
+        description: 'List provider models, readiness, and the recommended valid model for Supervisor start-run calls.',
+      },
+      {
+        name: 'devsquad.start_run',
+        description: 'Structured Supervisor start tool. Optionally stage a concept, then start plan-only or full-build with explicit settings.',
+      },
+      {
+        name: 'devsquad.pipeline_reset',
+        description: 'Reset manual or pipeline state when a stale run/plan needs to be cleared before starting over.',
       },
     ],
   };

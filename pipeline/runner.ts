@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { getBaseUrlForProvider, getProviderConfigRoot } from '../src/lib/providerConfig.ts';
+import { getBaseUrlForProvider, getProviderConfig, getProviderConfigRoot } from '../src/lib/providerConfig.ts';
 
 export type PipelineAgentId = 'A' | 'B' | 'C' | 'D' | 'E' | 'S';
 export type RunnerMode = 'host' | 'docker' | 'auto';
@@ -342,7 +342,8 @@ export function buildRunnerEnv(opts: RunnerOptions): NodeJS.ProcessEnv {
       env.OPENAI_BASE_URL = baseUrl;
     } else if (opts.provider === 'openwebui') {
       env.OPENWEBUI_BASE_URL = baseUrl;
-      env.OPENAI_BASE_URL = baseUrl;
+      env.OPENAI_BASE_URL = `${baseUrl.replace(/\/$/, '')}/api`;
+      env.OPENAI_API_KEY = String(getProviderConfig('openwebui').apiKey || env.OPENAI_API_KEY || '');
     } else {
       env.OPENAI_BASE_URL = baseUrl;
     }

@@ -9,6 +9,7 @@ import {
   writeJsonStateLocked,
   withLockedJsonState,
 } from './locked-json-state';
+import { describeModelListing, getProviderDefinition, isRunnableProviderModel } from './provider-catalog';
 
 export const BUILDUI_DIR = resolve(process.cwd(), 'pipeline');
 export const BUILDS_DIR = join(homedir(), 'Builds');
@@ -268,9 +269,44 @@ export function startPipelineRun(options: {
     const concept = String(stagingState.concept || '').trim();
     const sessions = (stagingState.sessions as Record<string, string> | undefined) || {};
     const aSession = sessions.A || '';
+    const selectedProvider = String(options.provider || stagingState.selectedProvider || 'claude').trim() || 'claude';
+    const explicitModel = typeof options.model === 'string' && options.model.trim() ? options.model.trim() : '';
+    const stagedModel = String(stagingState.selectedModel || '').trim();
+    let selectedModel = explicitModel || stagedModel || 'claude-opus-4-6';
 
     if (!concept) {
       return { success: false, error: 'No build concept found yet.' };
+    }
+
+    const providerDefinition = getProviderDefinition(selectedProvider);
+    if (providerDefinition.mode === 'openai-compat-http') {
+      const listing = describeModelListing(providerDefinition.id);
+      const availableById = new Map((listing.models || []).map((model) => [model.id, model]));
+      const selectedCandidate = selectedModel ? availableById.get(selectedModel) : undefined;
+
+      if (selectedModel) {
+        if (!selectedCandidate) {
+          if (explicitModel) {
+            return { success: false, error: `Selected model '${selectedModel}' is not available for ${providerDefinition.label}.` };
+          }
+          selectedModel = String(listing.recommendedModel?.id || '').trim();
+        } else if (!isRunnableProviderModel(providerDefinition.id, selectedCandidate)) {
+          if (explicitModel) {
+            return { success: false, error: selectedCandidate.unavailableReason || `Selected model '${selectedModel}' is not ready for ${providerDefinition.label}.` };
+          }
+          selectedModel = String(listing.recommendedModel?.id || '').trim();
+        }
+      }
+
+      if (!selectedModel) {
+        selectedModel = String(listing.recommendedModel?.id || '').trim();
+      }
+
+      if (providerDefinition.id === 'lm-studio' || providerDefinition.id === 'openwebui' || providerDefinition.id === 'ollama') {
+        if (!listing.preflightOk || !selectedModel) {
+          return { success: false, error: listing.preflightMessage || `No usable generation model is ready for ${providerDefinition.label}.` };
+        }
+      }
     }
 
     const projectName = concept
@@ -309,8 +345,8 @@ export function startPipelineRun(options: {
     stagingState.permissionMode = permissionMode;
     stagingState.runGoal = runGoal;
     stagingState.runFinalAudit = runFinalAudit;
-    stagingState.selectedModel = options.model || String(stagingState.selectedModel || 'claude-opus-4-6');
-    stagingState.selectedProvider = options.provider || String(stagingState.selectedProvider || 'claude');
+    stagingState.selectedModel = selectedModel;
+    stagingState.selectedProvider = selectedProvider;
     stagingState.requestedWorkingDir = options.workingDir || String(stagingState.requestedWorkingDir || '');
     stagingState.agentModels = options.agentModels || (stagingState.agentModels as Record<string, string> | undefined) || {};
     stagingState.stopAfterPhase = runGoal === 'plan-only' ? 'plan-review' : 'none';
@@ -535,7 +571,11 @@ export function startAuditAction(
           return;
         }
 
-        if (state.pipelineStatus !== 'awaiting-audit-decision') {
+        const currentPhase = String(state.currentPhase || 'concept');
+        const pipelineStatus = String(state.pipelineStatus || 'idle');
+        const canRetryFailedDeploy = action === 'deploy' && currentPhase === 'deploy' && pipelineStatus === 'failed' && state.buildComplete !== true;
+
+        if (pipelineStatus !== 'awaiting-audit-decision' && !canRetryFailedDeploy) {
           error = `Audit actions are only valid when pipelineStatus is 'awaiting-audit-decision' (current: ${String(state.pipelineStatus)})`;
           status = 409;
           return;
@@ -579,6 +619,7 @@ export function startAuditAction(
         state.resumeAction = resumeAction;
         state.resumeActionTarget = action === 'deploy' ? undefined : findingId;
         state.auditActionInFlight = true;
+        state.pipelineStatus = 'running';
 
         permissionMode =
           state.permissionMode === 'plan' ? 'plan'

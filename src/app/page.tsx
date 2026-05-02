@@ -173,12 +173,15 @@ export default function PipelinePage() {
       }));
   const modelOptions = models.length > 0
     ? models
-    : MODEL_OPTIONS.map((opt) => ({
+    : selectedProvider === 'claude'
+    ? MODEL_OPTIONS.map((opt) => ({
         id: opt.value,
         label: opt.label,
         providerId: selectedProvider,
         source: 'static',
-      }));
+      }))
+    : [];
+  const selectedModelValue = modelOptions.some((opt) => opt.id === selectedModel) ? selectedModel : '';
   const selectedProviderDefinition = providers.find((provider) => provider.id === selectedProvider);
   const showHttpSettings = (selectedProviderDefinition?.mode || providerMode) === 'openai-compat-http';
   const showApiKeyInput = ['openwebui', 'openai-compat', 'claude-code-router', 'openclaude-code'].includes(selectedProvider);
@@ -305,7 +308,7 @@ export default function PipelinePage() {
     const message = chatInput.trim();
     if (!message) return;
     const targetAgent: AgentId = isPipeline ? 'S' : selectedAgent;
-    if (sendingAgents.has(targetAgent)) {
+    if (sendingAgents.size > 0 || queueDispatching) {
       setSupervisorQueue((prev) => [...prev, {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         text: message,
@@ -324,7 +327,7 @@ export default function PipelinePage() {
   async function handleSendQueuedSupervisorMessage(itemId: string) {
     const queued = supervisorQueue.find((item) => item.id === itemId);
     const targetAgent = queued?.agent || 'S';
-    if (!queued || sendingAgents.has(targetAgent) || queueDispatching) return;
+    if (!queued || sendingAgents.size > 0 || queueDispatching) return;
     setQueueDispatching(true);
     try {
       const response = await dispatchTopMessage(targetAgent, queued.text);
@@ -349,8 +352,8 @@ export default function PipelinePage() {
   }
 
   useEffect(() => {
-    if (queueDispatching) return;
-    const nextQueued = supervisorQueue.find((item) => !item.isEditing && !sendingAgents.has(item.agent));
+    if (queueDispatching || sendingAgents.size > 0) return;
+    const nextQueued = supervisorQueue.find((item) => !item.isEditing);
     if (!nextQueued) return;
 
     const queuedText = nextQueued.text.trim();
@@ -637,10 +640,14 @@ export default function PipelinePage() {
                 </select>
                 <select
                   title="Model"
-                  value={selectedModel}
+                  value={selectedModelValue}
                   onChange={(e) => setSelectedModel(e.target.value)}
+                  disabled={providerStatusKind === 'loading' && modelOptions.length === 0}
                   className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300 focus:border-blue-600 focus:outline-none"
                 >
+                  {modelOptions.length === 0 && (
+                    <option value="" className="bg-[#1a1a2a]">Loading provider models…</option>
+                  )}
                   {modelOptions.map((opt) => (
                     <option key={opt.id} value={opt.id} className="bg-[#1a1a2a]">{opt.label}</option>
                   ))}
@@ -696,9 +703,14 @@ export default function PipelinePage() {
                         title="API Key"
                         value={providerApiKey}
                         onChange={(e) => setProviderApiKey(e.target.value)}
-                        placeholder={selectedProvider === 'openwebui' ? 'Example: sk-...' : 'Example: provider API key'}
+                        placeholder={selectedProvider === 'openwebui' ? 'Paste the Open WebUI JWT token here' : 'Example: provider API key'}
                         className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-blue-600 focus:outline-none"
                       />
+                      {selectedProvider === 'openwebui' && (
+                        <p className="text-[10px] text-slate-500">
+                          Use the JWT token from Open WebUI Account → API keys. The visible API key may not authorize model discovery.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
